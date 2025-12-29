@@ -540,16 +540,17 @@ async def select_track_via_catalog(
         # Convert recent history to CatalogTrack format for diversity
         recent_catalog_tracks = []
         for hist_item in bundle.history.recent_tracks[:10]:
-            if hist_item.get('artist') and hist_item.get('title'):
+            # Fix Issue #2: HistoryItem is a dataclass, use attribute access not dict
+            if hist_item.artist and hist_item.title:
                 # Simplified catalog track from history
                 from backend_v2.catalog.providers import CatalogTrack, AudioFeatures
                 recent_catalog_tracks.append(CatalogTrack(
-                    title=hist_item['title'],
-                    artist=hist_item['artist'],
+                    title=hist_item.title,
+                    artist=hist_item.artist,
                     features=AudioFeatures(
-                        energy=hist_item.get('energy'),
-                        valence=hist_item.get('valence'),
-                        tempo=hist_item.get('tempo'),
+                        energy=None,  # HistoryItem doesn't store features
+                        valence=None,
+                        tempo=None,
                     )
                 ))
         
@@ -579,7 +580,8 @@ async def select_track_via_catalog(
             logger.warning("❌ No tracks found in catalog search")
             metrics.record_local_library_fallback()
             # Fallback to local library
-            return await select_track(db, bundle, prev_song)
+            # Fix Issue #3: Pass all required arguments to select_track
+            return await select_track(db, bundle, state, prev_song, history_ids)
         
         logger.info(f"✅ Selected from catalog: {selected_catalog_track.artist} - {selected_catalog_track.title}")
         metrics.record_catalog_selection()
@@ -622,15 +624,24 @@ async def select_track_via_catalog(
             song = result.scalar_one_or_none()
             
             if song:
+                # Fix Issue #4 & #5: song.features is scalar (not list), use correct field name, and nest features
+                features = song.features
                 return {
                     "uuid": song.uuid,
                     "title": song.title,
                     "artist": song.artist,
                     "local_path": song.local_path,
-                    "energy": song.features[0].energy if song.features else None,
-                    "valence": song.features[0].valence if song.features else None,
-                    "tempo": song.features[0].tempo if song.features else None,
-                    "rationale": intent.rationale,
+                    "features": {
+                        "energy": features.energy if features else None,
+                        "valence": features.valence if features else None,
+                        "tempo": features.tempo if features else None,
+                        "key": features.key if features else None,
+                        "mode": features.mode if features else None,
+                        "danceability": features.danceability if features else None,
+                        "acousticness": features.acousticness if features else None,
+                        "instrumentalness": features.instrumentalness if features else None,
+                    },
+                    "rationale": intent.selection_rationale or "Catalog selection",
                     "selection_method": "catalog_intent",
                 }
         else:
@@ -688,11 +699,23 @@ async def select_track_via_catalog(
                     song = result.scalar_one_or_none()
                     
                     if song:
+                        # Include features for consistency with main acquisition path
+                        features = song.features
                         return {
                             "uuid": song.uuid,
                             "title": song.title,
                             "artist": song.artist,
                             "local_path": song.local_path,
+                            "features": {
+                                "energy": features.energy if features else None,
+                                "valence": features.valence if features else None,
+                                "tempo": features.tempo if features else None,
+                                "key": features.key if features else None,
+                                "mode": features.mode if features else None,
+                                "danceability": features.danceability if features else None,
+                                "acousticness": features.acousticness if features else None,
+                                "instrumentalness": features.instrumentalness if features else None,
+                            },
                             "rationale": "Fallback acquisition",
                             "selection_method": "catalog_fallback",
                         }
