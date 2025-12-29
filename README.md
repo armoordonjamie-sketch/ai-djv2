@@ -180,6 +180,7 @@ alembic downgrade -1
 - [Voice Onboarding Fix](docs/voice_onboarding_fix.md) - iOS PWA connection stability
 - [Known Issues](docs/issues.md) - Current backend issues and suggested fixes
 - [GitHub Issues Template](docs/github-issues.md) - Ready-to-create GitHub issues
+- [Create Issues Guide](docs/CREATE_ISSUES_GUIDE.md) - Step-by-step guide to create issues on GitHub
 
 ### Development Guides
 - [Ship Checklist](docs/ship_checklist.md) - Pre-deployment checklist
