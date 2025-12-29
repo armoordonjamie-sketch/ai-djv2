@@ -240,11 +240,11 @@ def main():
         number, url = create_issue(token, issue)
         
         if number:
-            print(f"✅ #{number}")
+            print(f"[OK] #{number}")
             print(f"   {url}")
             created += 1
         else:
-            print("❌ Failed")
+            print("[FAILED]")
             failed += 1
         print()
     
