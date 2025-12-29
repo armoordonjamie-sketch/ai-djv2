@@ -928,6 +928,20 @@ async def get_scored_candidates(
     from backend_v2.models.existing import Song, SongFeatures
     from backend_v2.config import UNKNOWN_FEATURES_PENALTY
     
+    # Fix Issue #6: Helper to safely parse JSON strings to lists
+    def _parse_json_list_safe(val: Optional[str]) -> List[str]:
+        """Parse JSON string to list, return [] on failure."""
+        if not val:
+            return []
+        if isinstance(val, list):
+            return val
+        try:
+            parsed = json.loads(val)
+            return parsed if isinstance(parsed, list) else []
+        except (json.JSONDecodeError, TypeError):
+            logger.warning(f"Failed to parse JSON list: {val[:50]}...")
+            return []
+    
     # Defaults to bundle history if not provided
     if history_ids is None:
         history_ids = bundle.history.recent_plays
@@ -955,8 +969,11 @@ async def get_scored_candidates(
             "local_path": song.local_path,
             "duration_sec": song.duration_sec,
             "artwork_url": song.artwork_url,
-            "genres": song.genres if hasattr(song, 'genres') else [],
-            "tags": song.tags if hasattr(song, 'tags') else [],
+            # Fix Issue #6: Parse JSON strings to lists for genres/tags
+            "genres": _parse_json_list_safe(song.genres if hasattr(song, 'genres') else None),
+            "tags": _parse_json_list_safe(song.tags if hasattr(song, 'tags') else None),
+            # Fix Issue #7: Include explicit field for filtering
+            "explicit": bool(song.explicit) if hasattr(song, 'explicit') else False,
         }
         
         # Add features if available

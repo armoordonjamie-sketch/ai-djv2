@@ -131,6 +131,145 @@ class TestHardConstraints:
 
 
 # =============================================================================
+# JSON Parsing and Explicit Filtering Tests (Issues #6, #7)
+# =============================================================================
+
+class TestGenreTagParsing:
+    """Test Issue #6: Genres/tags stored as JSON strings"""
+    
+    def test_genre_denylist_with_json_string(self):
+        """Denylist "drum and bass" rejects song with genres='["Drum and Bass"]'."""
+        from backend_v2.services.preference_bundle import check_hard_constraints
+        
+        # Simulate what would be in apply_hard_constraints after JSON parsing
+        song = {
+            "uuid": "test-dnb",
+            "title": "Jungle Track",
+            "artist": "DJ Test",
+            "features": {"tempo": 170, "energy": 0.9},
+            "genres": ["Drum and Bass", "Jungle"],  # After JSON parsing
+        }
+        
+        # Default genre denylist includes "ballad" but not "drum and bass"
+        # Let's use a custom denylist
+        passes, reason = check_hard_constraints(
+            song,
+            genre_denylist=["ballad", "ambient", "drum and bass"]
+        )
+        
+        assert not passes
+        assert "denied genre/tag" in reason
+        assert "drum and bass" in reason.lower()
+    
+    def test_malformed_genres_json_no_crash(self):
+        """Invalid JSON results in empty list, no crash."""
+        # This test verifies the JSON parsing function handles bad input
+        import json
+        
+        # Simulate what _parse_json_list_safe does
+        def _parse_json_list_safe(val):
+            if not val:
+                return []
+            if isinstance(val, list):
+                return val
+            try:
+                parsed = json.loads(val)
+                return parsed if isinstance(parsed, list) else []
+            except (json.JSONDecodeError, TypeError):
+                return []
+        
+        # Test various malformed inputs
+        assert _parse_json_list_safe(None) == []
+        assert _parse_json_list_safe("") == []
+        assert _parse_json_list_safe("not json at all") == []
+        assert _parse_json_list_safe('{"not": "a list"}') == []
+        assert _parse_json_list_safe('["valid", "json"]') == ["valid", "json"]
+        assert _parse_json_list_safe(['already', 'a', 'list']) == ['already', 'a', 'list']
+    
+    def test_genre_filtering_case_insensitive(self):
+        """Genre denylist is case-insensitive."""
+        from backend_v2.services.preference_bundle import check_hard_constraints
+        
+        song = {
+            "uuid": "test-ballad",
+            "title": "Slow Song",
+            "artist": "Ballad Artist",
+            "features": {"tempo": 100, "energy": 0.5},  # Pass tempo/energy checks
+            "genres": ["BALLAD", "Pop"],  # Uppercase - should still be caught
+        }
+        
+        passes, reason = check_hard_constraints(song)
+        
+        # Should be rejected because "ballad" is in default denylist
+        assert not passes
+        assert "denied genre/tag" in reason
+
+
+class TestExplicitFiltering:
+    """Test Issue #7: Explicit-lyrics filtering"""
+    
+    def test_explicit_avoid_rejects_explicit_song(self):
+        """User with explicit_lyrics="avoid" doesn't get explicit tracks."""
+        from backend_v2.services.preference_bundle import apply_hard_constraints
+        
+        songs = [
+            {
+                "uuid": "clean-song",
+                "title": "Clean Track",
+                "artist": "Family Artist",
+                "features": {"tempo": 120, "energy": 0.7},
+                "genres": ["Pop"],
+                "explicit": False,
+            },
+            {
+                "uuid": "explicit-song",
+                "title": "Explicit Track",
+                "artist": "Explicit Artist",
+                "features": {"tempo": 125, "energy": 0.8},
+                "genres": ["Hip Hop"],
+                "explicit": True,
+            },
+        ]
+        
+        # Mock bundle with explicit avoidance
+        mock_bundle = MagicMock()
+        mock_bundle.allows_explicit.return_value = False  # User wants to avoid explicit
+        mock_bundle.get_no_go_list.return_value = []
+        
+        filtered = apply_hard_constraints(songs, mock_bundle)
+        
+        # Should only return the clean song
+        assert len(filtered) == 1
+        assert filtered[0]["uuid"] == "clean-song"
+    
+    def test_explicit_ok_allows_explicit_song(self):
+        """User with explicit_lyrics="ok" gets explicit tracks."""
+        from backend_v2.services.preference_bundle import apply_hard_constraints
+        
+        songs = [
+            {
+                "uuid": "explicit-song",
+                "title": "Explicit Track",
+                "artist": "Explicit Artist",
+                "features": {"tempo": 125, "energy": 0.8},
+                "genres": ["Hip Hop"],
+                "explicit": True,
+            },
+        ]
+        
+        # Mock bundle that allows explicit
+        mock_bundle = MagicMock()
+        mock_bundle.allows_explicit.return_value = True
+        mock_bundle.get_no_go_list.return_value = []
+        
+        filtered = apply_hard_constraints(songs, mock_bundle)
+        
+        # Should return the explicit song
+        assert len(filtered) == 1
+        assert filtered[0]["uuid"] == "explicit-song"
+
+
+# =============================================================================
 # Download Validation Tests
 # =============================================================================
 

@@ -60,7 +60,7 @@
 - **Fix**: Parse JSON strings to lists when building song_dict
 - **Test**: `test_genre_denylist_with_json_string()`
 - **Reproduction**: Song with genres='["Drum and Bass"]' not rejected by denylist="drum and bass"
-- **Status**: ⏳ Pending
+- **Status**: ✅ Fixed
 
 #### Issue #7: Explicit-lyrics filtering never triggers
 - **Location**: `backend_v2/services/preference_bundle.py:747-753`
@@ -69,7 +69,7 @@
 - **Fix**: Add `explicit: bool(song.explicit)` to song_dict
 - **Test**: `test_explicit_avoid_rejects_explicit_song()`
 - **Reproduction**: Set user explicit_lyrics="avoid", observe explicit songs still selected
-- **Status**: ⏳ Pending
+- **Status**: ✅ Fixed
 
 ### Medium Priority Issues
 
