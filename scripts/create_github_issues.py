@@ -151,7 +151,7 @@ def create_issue(token: str, issue_data: Dict) -> bool:
         return True
     except requests.exceptions.RequestException as e:
         print(f"❌ Failed to create issue '{issue_data['title']}': {e}")
-        if hasattr(e.response, 'text'):
+        if hasattr(e, 'response') and e.response is not None:
             print(f"   Response: {e.response.text}")
         return False
 
@@ -166,7 +166,6 @@ def main():
         print("1. Go to https://github.com/settings/tokens")
         print("2. Generate a new token with 'repo' scope")
         print("3. Set it: $env:GITHUB_TOKEN='your_token_here'")
-        print("\nOr pass --token flag (not recommended for security)")
         sys.exit(1)
     
     # Parse issues

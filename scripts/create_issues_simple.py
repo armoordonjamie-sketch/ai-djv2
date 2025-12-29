@@ -10,9 +10,9 @@ You need a GitHub Personal Access Token:
 5. Generate and copy the token
 6. Run this script and paste the token when prompted
 """
-import json
 import requests
 from pathlib import Path
+from typing import Dict, Any, Optional, Tuple
 
 REPO = "armoordonjamie-sketch/ai-djv2"
 API_URL = f"https://api.github.com/repos/{REPO}/issues"
@@ -190,7 +190,7 @@ See [docs/issues.md](docs/issues.md) for full details.""",
 ]
 
 
-def create_issue(token, issue_data):
+def create_issue(token: str, issue_data: Dict[str, Any]) -> Tuple[Optional[int], Optional[str]]:
     """Create a single GitHub issue."""
     headers = {
         "Authorization": f"token {token}",

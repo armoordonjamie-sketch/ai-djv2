@@ -1,5 +1,7 @@
 """Close GitHub issues for completed backend fixes."""
 import os
+import sys
+from typing import Dict, Any
 import requests
 
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
@@ -7,7 +9,7 @@ REPO = "armoordonjamie-sketch/ai-djv2"
 
 if not GITHUB_TOKEN:
     print("Error: GITHUB_TOKEN environment variable not set")
-    exit(1)
+    sys.exit(1)
 
 headers = {
     "Authorization": f"token {GITHUB_TOKEN}",
@@ -15,7 +17,7 @@ headers = {
 }
 
 # Map issues to their fix commits
-issues = {
+issues: Dict[int, Dict[str, str]] = {
     2: {
         "title": "HistoryItem used as dict in catalog selection",
         "commit": "598f51c",
