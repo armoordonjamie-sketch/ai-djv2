@@ -1,0 +1,41 @@
+# Cancel if anything is still running (Ctrl+C if needed)
+
+# Reset the staging area
+git reset
+
+# Update .gitignore to exclude unnecessary files
+@"
+# Dependencies
+node_modules/
+__pycache__/
+*.pyc
+.env
+.venv/
+venv/
+env/
+
+# Large files
+*.zip
+data/
+*.mp3
+*.wav
+*.flac
+
+# IDE
+.cursor/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Backups
+*.backup
+*_backup/
+frontend_backup/
+"@ | Out-File -FilePath .gitignore -Encoding utf8 -Force
+
+# Now add and commit (should be much faster - maybe 1-2 minutes max)
+git add .
+git status --short | Measure-Object -Line
