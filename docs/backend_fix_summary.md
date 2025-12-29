@@ -80,7 +80,7 @@
 - **Fix**: `reject_unknown = DEFAULT if reject_unknown is None else reject_unknown`
 - **Test**: `test_reject_unknown_false_respected()`
 - **Reproduction**: Pass reject_unknown=False, observe unknown songs still rejected
-- **Status**: ⏳ Pending
+- **Status**: ✅ Fixed
 
 #### Issue #9: Unhandled JSON parse errors in user context
 - **Location**: `backend_v2/services/preference_bundle.py:414`
@@ -89,7 +89,7 @@
 - **Fix**: Wrap in try/except, log error, set parsed_json=None
 - **Test**: `test_malformed_context_json_no_crash()`
 - **Reproduction**: Insert context row with invalid JSON, build bundle
-- **Status**: ⏳ Pending
+- **Status**: ✅ Fixed
 
 #### Issue #10: Mood metadata missing from MoodData
 - **Location**: `backend_v2/services/preference_bundle.py:43`

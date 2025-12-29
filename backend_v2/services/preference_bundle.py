@@ -407,11 +407,22 @@ async def build_preference_bundle(
     if context_row is None:
         context_row = await _get_or_create_default_context(db, user_id)
     
+    # Fix Issue #9: Safely parse context JSON to avoid crashes
+    def _safe_json_loads(val: Optional[str]) -> Optional[Dict]:
+        """Parse JSON string safely, return None on failure."""
+        if not val:
+            return None
+        try:
+            return json.loads(val)
+        except json.JSONDecodeError as e:
+            logger.warning(f"Failed to parse context JSON for user {user_id}: {e}")
+            return None
+    
     context = ContextData(
         id=context_row.id,
         name=context_row.name,
         raw_text=context_row.raw_text or "",
-        parsed_json=json.loads(context_row.parsed_json) if context_row.parsed_json else None,
+        parsed_json=_safe_json_loads(context_row.parsed_json),
     )
     
     # --- Load Mood ---
@@ -667,7 +678,8 @@ def check_hard_constraints(
     min_tempo = min_tempo if min_tempo is not None else DEFAULT_MIN_TEMPO_BPM
     min_energy = min_energy if min_energy is not None else DEFAULT_MIN_ENERGY
     genre_denylist = genre_denylist if genre_denylist is not None else BALLAD_GENRE_DENYLIST
-    reject_unknown = reject_unknown if reject_unknown else REJECT_UNKNOWN_FEATURES
+    # Fix Issue #8: Allow reject_unknown=False to be passed through
+    reject_unknown = REJECT_UNKNOWN_FEATURES if reject_unknown is None else reject_unknown
     
     features = song.get("features", {})
     
