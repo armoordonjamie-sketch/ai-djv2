@@ -98,7 +98,7 @@
 - **Fix**: Extend MoodData with required fields, populate in build_preference_bundle
 - **Test**: `test_mooddata_includes_personalization_fields()`
 - **Reproduction**: Check MoodData fields, observe missing mood personalization in prompts
-- **Status**: ⏳ Pending
+- **Status**: ✅ Fixed
 
 ---
 

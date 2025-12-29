@@ -51,6 +51,16 @@ class MoodData:
     color: Optional[str] = None
     intro_segment_path: Optional[str] = None
     intro_song_uuid: Optional[str] = None
+    # Fix Issue #10: Mood-specific personalization fields for prompts/scoring
+    danceability_target: Optional[float] = None
+    tempo_min: Optional[int] = None
+    tempo_max: Optional[int] = None
+    genre_seeds: List[str] = field(default_factory=list)
+    vibe_keywords: List[str] = field(default_factory=list)
+    avoid_genres: List[str] = field(default_factory=list)
+    example_artists: List[str] = field(default_factory=list)
+    intro_personality: Optional[str] = None
+    era_hint: Optional[str] = None
 
 
 @dataclass
@@ -438,12 +448,18 @@ async def build_preference_bundle(
     if mood_row is None:
         mood_row = await _get_or_create_default_mood(db, user_id)
     
-    genres = []
-    if mood_row.genres_json:
+    # Fix Issue #10: Helper to safely parse JSON lists for mood fields
+    def _parse_json_list_safe(val: Optional[str]) -> List[str]:
+        """Parse JSON string to list, return [] on failure."""
+        if not val:
+            return []
         try:
-            genres = json.loads(mood_row.genres_json)
+            parsed = json.loads(val)
+            return parsed if isinstance(parsed, list) else []
         except json.JSONDecodeError:
-            genres = []
+            return []
+    
+    genres = _parse_json_list_safe(mood_row.genres_json)
     
     mood = MoodData(
         id=mood_row.id,
@@ -455,6 +471,16 @@ async def build_preference_bundle(
         color=mood_row.color,
         intro_segment_path=mood_row.intro_segment_path,
         intro_song_uuid=mood_row.intro_song_uuid,
+        # Fix Issue #10: Populate mood-specific personalization fields
+        danceability_target=mood_row.danceability_target if hasattr(mood_row, 'danceability_target') else None,
+        tempo_min=mood_row.tempo_min if hasattr(mood_row, 'tempo_min') else None,
+        tempo_max=mood_row.tempo_max if hasattr(mood_row, 'tempo_max') else None,
+        genre_seeds=_parse_json_list_safe(mood_row.genre_seeds_json if hasattr(mood_row, 'genre_seeds_json') else None),
+        vibe_keywords=_parse_json_list_safe(mood_row.vibe_keywords_json if hasattr(mood_row, 'vibe_keywords_json') else None),
+        avoid_genres=_parse_json_list_safe(mood_row.avoid_genres_json if hasattr(mood_row, 'avoid_genres_json') else None),
+        example_artists=_parse_json_list_safe(mood_row.example_artists_json if hasattr(mood_row, 'example_artists_json') else None),
+        intro_personality=mood_row.intro_personality if hasattr(mood_row, 'intro_personality') else None,
+        era_hint=mood_row.era_hint if hasattr(mood_row, 'era_hint') else None,
     )
     
     # --- Load Mood Profile ---

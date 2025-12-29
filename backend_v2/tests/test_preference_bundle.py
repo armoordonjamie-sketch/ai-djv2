@@ -377,6 +377,79 @@ class TestMalformedJSON:
         pass
 
 
+# =============================================================================
+# MoodData Extension Tests (Issue #10)
+# =============================================================================
+
+class TestMoodDataExtension:
+    """Test Issue #10: MoodData missing personalization fields"""
+    
+    def test_mooddata_includes_personalization_fields(self):
+        """Verify MoodData has all personalization fields."""
+        from backend_v2.services.preference_bundle import MoodData
+        
+        # Create MoodData with new fields
+        mood = MoodData(
+            id="mood-1",
+            name="Test Mood",
+            genres=["Pop", "Rock"],
+            energy_target=0.7,
+            valence_target=0.6,
+            dj_personality="chatty",
+            color="#FF0000",
+            intro_segment_path="/path/to/intro.mp3",
+            intro_song_uuid="song-uuid",
+            # New personalization fields
+            danceability_target=0.8,
+            tempo_min=100,
+            tempo_max=140,
+            genre_seeds=["Electronic", "Dance"],
+            vibe_keywords=["energetic", "upbeat"],
+            avoid_genres=["ballad", "slow"],
+            example_artists=["Daft Punk", "Justice"],
+            intro_personality="hype and energetic",
+            era_hint="2010s",
+        )
+        
+        # Verify all fields are accessible
+        assert mood.id == "mood-1"
+        assert mood.name == "Test Mood"
+        assert mood.danceability_target == 0.8
+        assert mood.tempo_min == 100
+        assert mood.tempo_max == 140
+        assert mood.genre_seeds == ["Electronic", "Dance"]
+        assert mood.vibe_keywords == ["energetic", "upbeat"]
+        assert mood.avoid_genres == ["ballad", "slow"]
+        assert mood.example_artists == ["Daft Punk", "Justice"]
+        assert mood.intro_personality == "hype and energetic"
+        assert mood.era_hint == "2010s"
+    
+    def test_mooddata_default_values(self):
+        """Verify MoodData works with minimal required fields."""
+        from backend_v2.services.preference_bundle import MoodData
+        
+        # Create with only required fields
+        mood = MoodData(
+            id="mood-2",
+            name="Minimal Mood",
+            genres=[],
+            energy_target=0.5,
+            valence_target=0.5,
+            dj_personality="chill",
+        )
+        
+        # New fields should have default values
+        assert mood.danceability_target is None
+        assert mood.tempo_min is None
+        assert mood.tempo_max is None
+        assert mood.genre_seeds == []
+        assert mood.vibe_keywords == []
+        assert mood.avoid_genres == []
+        assert mood.example_artists == []
+        assert mood.intro_personality is None
+        assert mood.era_hint is None
+
+
 # Integration tests require database fixtures
 @pytest.mark.asyncio
 class TestBuildPreferenceBundle:
