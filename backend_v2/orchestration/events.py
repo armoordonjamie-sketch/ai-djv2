@@ -16,7 +16,6 @@ import json
 import logging
 import uuid
 from collections import deque
-from datetime import datetime
 from typing import Dict, Set, Any, Optional, List
 
 from fastapi import WebSocket
@@ -28,6 +27,7 @@ from backend_v2.schemas.status_events import (
     StatusEventPayload,
     Severity,
 )
+from backend_v2.utils.time import utc_isoformat, utc_now
 
 logger = logging.getLogger("ai-dj.events")
 
@@ -108,7 +108,7 @@ class UserEventEmitter:
             "v": EVENT_VERSION,
             "type": event_type,
             "data": data,
-            "ts": datetime.utcnow().isoformat() + "Z"
+            "ts": utc_isoformat(utc_now())
         }
         
         message = json.dumps(event)
@@ -229,7 +229,7 @@ class UserEventEmitter:
             severity: Event severity level
         """
         event_id = str(uuid.uuid4())
-        ts = datetime.utcnow()
+        ts = utc_now()
         
         # Build payload model if dict provided
         event_payload = None

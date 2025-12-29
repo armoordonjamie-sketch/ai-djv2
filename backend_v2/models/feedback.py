@@ -10,6 +10,7 @@ from sqlalchemy import String, Text, DateTime, ForeignKey, Index
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend_v2.db.base import Base
+from backend_v2.utils.time import utc_now
 
 if TYPE_CHECKING:
     from backend_v2.models.user import User
@@ -57,8 +58,8 @@ class FeedbackEvent(Base):
     value: Mapped[str] = mapped_column(String(20), nullable=False)  # "like" or "dislike"
     reason_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, 
-        default=datetime.utcnow, 
+        DateTime(timezone=True),
+        default=utc_now,
         nullable=False
     )
     

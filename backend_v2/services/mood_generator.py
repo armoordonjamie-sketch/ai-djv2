@@ -27,6 +27,7 @@ from backend_v2.models.user_profile import UserProfile
 from backend_v2.models.mood import Mood, MoodProfile
 from backend_v2.orchestration.events import get_event_emitter
 from backend_v2.schemas.status_events import StatusCategory, StatusStep
+from backend_v2.utils.time import utc_now
 
 logger = logging.getLogger("ai-dj.mood-generator")
 
@@ -67,7 +68,7 @@ class GenerationProgress:
     current_step: str = "Starting..."
     intros_ready: int = 0
     error: Optional[str] = None
-    started_at: datetime = field(default_factory=datetime.utcnow)
+    started_at: datetime = field(default_factory=utc_now)
     completed_at: Optional[datetime] = None
     created_mood_ids: List[str] = field(default_factory=list)
 
@@ -212,6 +213,11 @@ def calculate_mood_distinctness(moods: List[MoodTemplate]) -> float:
             distances.append(dist)
     
     return sum(distances) / len(distances) if distances else 0.0
+
+
+def _calculate_mood_spread(moods: List[MoodTemplate]) -> float:
+    """Backward-compatible alias for calculating mood distinctness."""
+    return calculate_mood_distinctness(moods)
 
 
 # Validate templates at module load time
@@ -409,7 +415,7 @@ async def generate_personalized_moods(user_id: str) -> None:
                     traceback.print_exc()
             
             progress.status = GenerationStatus.COMPLETE
-            progress.completed_at = datetime.utcnow()
+            progress.completed_at = utc_now()
             
             # Emit completion status
             await emitter.emit_status(

@@ -4,7 +4,8 @@ Ported from backend/orchestration/graph.py with multi-user adaptations.
 """
 from typing import TypedDict, List, Dict, Any, Optional
 from dataclasses import dataclass, field
-from datetime import datetime
+
+from backend_v2.utils.time import utc_isoformat, utc_now
 
 
 class NowPlayingSegment(TypedDict):
@@ -152,7 +153,7 @@ def add_decision_step(
         agent=agent,
         action=action,
         rationale=rationale,
-        timestamp=datetime.utcnow().isoformat() + "Z",
+        timestamp=utc_isoformat(utc_now()),
         metadata=metadata,
     )
     

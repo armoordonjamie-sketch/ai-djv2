@@ -89,12 +89,12 @@ def test_track_intent_creation():
         title="Test Song",
         artist="Test Artist",
         album="Test Album",
-        status=TrackIntentStatus.PENDING_ACQUISITION,
+        status=TrackIntentStatus.PENDING,
     )
     
     assert intent.title == "Test Song"
     assert intent.artist == "Test Artist"
-    assert intent.status == TrackIntentStatus.PENDING_ACQUISITION
+    assert intent.status == TrackIntentStatus.PENDING
     assert intent.acquired_song_uuid is None
 
 
@@ -107,11 +107,11 @@ async def test_track_intent_lifecycle():
         session_id="test-session",
         title="Test Song",
         artist="Test Artist",
-        status=TrackIntentStatus.PENDING_ACQUISITION,
+        status=TrackIntentStatus.PENDING,
     )
     
     # Initial state
-    assert intent.status == TrackIntentStatus.PENDING_ACQUISITION
+    assert intent.status == TrackIntentStatus.PENDING
     
     # Simulate successful acquisition
     intent.status = TrackIntentStatus.ACQUIRED
@@ -127,7 +127,7 @@ async def test_track_intent_lifecycle():
         session_id="test-session",
         title="Unavailable Song",
         artist="Unknown Artist",
-        status=TrackIntentStatus.PENDING_ACQUISITION,
+        status=TrackIntentStatus.PENDING,
     )
     
     intent2.status = TrackIntentStatus.FAILED
@@ -152,7 +152,7 @@ def test_mmr_diversity_concept():
     track3 = CatalogTrack(
         title="Chill Song",
         artist="Chill Artist",
-        features=AudioFeatures(energy=0.3, valence=0.4, danceability=0.3, tempo=80)
+        features=AudioFeatures(energy=0.0, valence=0.0, danceability=0.0, tempo=60)
     )
     
     vec1 = track_to_feature_vector(track1)

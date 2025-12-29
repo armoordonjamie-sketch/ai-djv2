@@ -7,7 +7,7 @@ Provides voice-based onboarding flow using ElevenLabs Conversational AI.
 """
 import json
 import logging
-from datetime import datetime
+from datetime import timedelta
 from typing import Optional, List, Literal
 
 import httpx
@@ -26,6 +26,7 @@ from backend_v2.config import (
     ELEVENLABS_ONBOARD_AGENT_ID,
     ONBOARD_TOOL_SECRET,
 )
+from backend_v2.utils.time import utc_now, ensure_utc
 
 logger = logging.getLogger("ai-dj.onboard")
 
@@ -220,9 +221,8 @@ async def get_onboard_status(
         else:
             # No progress tracking - check if it's been a while since onboarding
             if current_user.onboarded_at:
-                from datetime import datetime, timedelta
-                time_since_onboard = datetime.utcnow() - current_user.onboarded_at
-                if time_since_onboard > timedelta(minutes=5):
+                onboarded_at = ensure_utc(current_user.onboarded_at)
+                if onboarded_at and utc_now() - onboarded_at > timedelta(minutes=5):
                     # Been more than 5 minutes, assume generation completed or failed
                     # If user has any moods, consider them onboarded
                     fully_onboarded = moods_count > 0
@@ -434,7 +434,7 @@ async def submit_onboarding(
         profile.explicit_lyrics = explicit_lyrics
         profile.dj_personality = payload.dj_personality or profile.dj_personality
         profile.raw_context = payload.raw_context or profile.raw_context
-        profile.updated_at = datetime.utcnow()
+        profile.updated_at = utc_now()
     else:
         # Create new profile
         profile = UserProfile(
@@ -493,7 +493,7 @@ async def submit_onboarding(
     if payload.display_name and not user.display_name:
         user.display_name = payload.display_name
     
-    user.onboarded_at = datetime.utcnow()
+    user.onboarded_at = utc_now()
     
     await db.commit()
     

@@ -19,7 +19,6 @@ import sys
 import time
 import traceback
 import wave
-from datetime import datetime
 from typing import Dict, Optional, Any
 
 from backend_v2.config import (
@@ -29,6 +28,7 @@ from backend_v2.config import (
     STREAM_CLIENT_QUEUE_SIZE,
     MAX_SESSIONS_TOTAL,
 )
+from backend_v2.utils.time import utc_now
 
 logger = logging.getLogger("ai-dj.streaming")
 
@@ -50,8 +50,8 @@ class UserRadioPipeline:
     def __init__(self, user_id: str, session_id: str):
         self.user_id = user_id
         self.session_id = session_id
-        self.created_at = datetime.utcnow()
-        self.last_activity = datetime.utcnow()
+        self.created_at = utc_now()
+        self.last_activity = utc_now()
         
         # Queues
         self.segment_queue: asyncio.Queue = asyncio.Queue(maxsize=5)
@@ -141,7 +141,7 @@ class UserRadioPipeline:
         
     def touch(self):
         """Update last activity timestamp."""
-        self.last_activity = datetime.utcnow()
+        self.last_activity = utc_now()
 
     async def skip_current(self):
         """Skip the current segment and advance to the next one.
@@ -902,7 +902,7 @@ async def schedule_pipeline_stop(user_id: str, grace_period_seconds: int = 60):
 
 async def cleanup_idle_pipelines(max_idle_minutes: int = 10):
     """Stop pipelines that have been idle too long."""
-    now = datetime.utcnow()
+    now = utc_now()
     idle_threshold = max_idle_minutes * 60
     to_remove = []
     

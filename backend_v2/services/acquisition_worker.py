@@ -10,7 +10,6 @@ For now, this is a simple implementation. In production, consider using:
 """
 import asyncio
 import logging
-from datetime import datetime, timedelta
 from typing import Optional
 
 from sqlalchemy import select
@@ -19,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend_v2.db.session import get_db_session
 from backend_v2.models.track_intent import AcquisitionJob, TrackIntent, AcquisitionJobStatus
 from backend_v2.services.acquisition import get_acquisition_service
+from backend_v2.utils.time import utc_now
 
 logger = logging.getLogger("ai-dj.acquisition-worker")
 
@@ -147,7 +147,7 @@ class AcquisitionWorker:
                 
                 # Mark job as running
                 job.status = AcquisitionJobStatus.RUNNING.value
-                job.started_at = datetime.utcnow()
+                job.started_at = utc_now()
                 await db.commit()
                 
                 # Use acquisition service

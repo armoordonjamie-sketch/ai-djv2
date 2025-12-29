@@ -12,6 +12,7 @@ from sqlalchemy import String, Boolean, DateTime, ForeignKey, Index
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend_v2.db.base import Base
+from backend_v2.utils.time import utc_now, ensure_utc
 
 if TYPE_CHECKING:
     from backend_v2.models.context import UserContext
@@ -38,18 +39,18 @@ class User(Base):
     display_name: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, 
-        default=datetime.utcnow, 
+        DateTime(timezone=True),
+        default=utc_now,
         nullable=False
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, 
-        default=datetime.utcnow, 
-        onupdate=datetime.utcnow,
+        DateTime(timezone=True),
+        default=utc_now,
+        onupdate=utc_now,
         nullable=False
     )
     onboarded_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime,
+        DateTime(timezone=True),
         nullable=True,
         default=None,
     )
@@ -118,11 +119,11 @@ class RefreshToken(Base):
         index=True
     )
     token_hash: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
-    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
-    revoked_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revoked_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, 
-        default=datetime.utcnow, 
+        DateTime(timezone=True),
+        default=utc_now,
         nullable=False
     )
     
@@ -134,7 +135,8 @@ class RefreshToken(Base):
         """Check if token is valid (not expired, not revoked)."""
         if self.revoked_at is not None:
             return False
-        return datetime.utcnow() < self.expires_at
+        expires_at = ensure_utc(self.expires_at)
+        return expires_at is not None and utc_now() < expires_at
     
     def __repr__(self) -> str:
         return f"<RefreshToken(id={self.id}, user_id={self.user_id}, valid={self.is_valid})>"

@@ -1,9 +1,10 @@
 """Tests for Deezer API client."""
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 from backend_v2.integrations.deezer import DeezerClient, get_deezer_client
+from backend_v2.utils.time import utc_now
 
 
 class TestDeezerClient:
@@ -151,7 +152,7 @@ class TestDeezerClient:
         key = client._cache_key("test", foo="baz")
         
         # Store with expired timestamp
-        client._cache[key] = ({"old": "data"}, datetime.utcnow() - timedelta(days=2))
+        client._cache[key] = ({"old": "data"}, utc_now() - timedelta(days=2))
         
         # Should not return expired entry
         assert client._get_cached(key) is None

@@ -10,6 +10,7 @@ from sqlalchemy import String, Text, Boolean, Integer, DateTime, ForeignKey, Uni
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend_v2.db.base import Base
+from backend_v2.utils.time import utc_now
 
 if TYPE_CHECKING:
     from backend_v2.models.user import User
@@ -46,9 +47,9 @@ class AgentSettings(Base):
     )  # e.g., "track_selector", "speech_writer", "transition_planner"
     settings_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # JSON object
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, 
-        default=datetime.utcnow, 
-        onupdate=datetime.utcnow,
+        DateTime(timezone=True),
+        default=utc_now,
+        onupdate=utc_now,
         nullable=False
     )
     
@@ -100,9 +101,9 @@ class PromptTemplate(Base):
     version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, 
-        default=datetime.utcnow, 
-        onupdate=datetime.utcnow,
+        DateTime(timezone=True),
+        default=utc_now,
+        onupdate=utc_now,
         nullable=False
     )
     

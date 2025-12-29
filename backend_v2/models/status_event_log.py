@@ -11,6 +11,7 @@ from sqlalchemy import String, Text, DateTime, Float, ForeignKey, Index
 from sqlalchemy.orm import Mapped, mapped_column
 
 from backend_v2.db.base import Base
+from backend_v2.utils.time import utc_now
 
 
 class StatusEventLog(Base):
@@ -64,8 +65,8 @@ class StatusEventLog(Base):
     
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, 
-        default=datetime.utcnow, 
+        DateTime(timezone=True),
+        default=utc_now,
         nullable=False
     )
     

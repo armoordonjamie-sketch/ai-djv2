@@ -22,6 +22,7 @@ from backend_v2.models.mood import Mood, MoodProfile
 from backend_v2.models.feedback import FeedbackEvent
 from backend_v2.models.settings import AgentSettings, PromptTemplate
 from backend_v2.models.existing import PlayHistory, Song
+from backend_v2.utils.time import utc_now, ensure_utc
 
 logger = logging.getLogger("ai-dj.preference_bundle")
 
@@ -163,7 +164,7 @@ class PreferenceBundle:
     prompt_templates: Dict[str, str]  # {template_name: template_text}
     
     # Computed at build time
-    built_at: datetime = field(default_factory=datetime.utcnow)
+    built_at: datetime = field(default_factory=utc_now)
     
     def get_agent_setting(self, agent_name: str, key: str, default: Any = None) -> Any:
         """Get a specific agent setting with fallback."""
@@ -255,7 +256,8 @@ class PreferenceBundleCache:
             return None
         
         bundle, cached_at = entry
-        if datetime.utcnow() - cached_at > self._ttl:
+        cached_at = ensure_utc(cached_at)
+        if cached_at is None or utc_now() - cached_at > self._ttl:
             del self._cache[key]
             return None
         
@@ -270,7 +272,7 @@ class PreferenceBundleCache:
     ):
         """Cache a bundle."""
         key = self._make_key(user_id, mood_id, context_name)
-        self._cache[key] = (bundle, datetime.utcnow())
+        self._cache[key] = (bundle, utc_now())
     
     def invalidate(self, user_id: str):
         """Invalidate all cached bundles for a user."""

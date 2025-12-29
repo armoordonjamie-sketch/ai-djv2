@@ -19,6 +19,7 @@ from backend_v2.config import (
     ACCESS_TOKEN_EXPIRES_MIN,
     REFRESH_TOKEN_EXPIRES_DAYS,
 )
+from backend_v2.utils.time import utc_now
 
 
 # =============================================================================
@@ -64,13 +65,13 @@ def create_access_token(
     if expires_delta is None:
         expires_delta = timedelta(minutes=ACCESS_TOKEN_EXPIRES_MIN)
     
-    expire = datetime.utcnow() + expires_delta
+    expire = utc_now() + expires_delta
     
     payload = {
         "sub": user_id,
         "type": "access",
         "exp": expire,
-        "iat": datetime.utcnow(),
+        "iat": utc_now(),
     }
     
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALG)
@@ -93,7 +94,7 @@ def create_refresh_token(user_id: str) -> Tuple[str, str, datetime]:
         raise ValueError("JWT_SECRET not configured")
     
     expires_delta = timedelta(days=REFRESH_TOKEN_EXPIRES_DAYS)
-    expire = datetime.utcnow() + expires_delta
+    expire = utc_now() + expires_delta
     
     # Generate a secure random token
     raw_token = secrets.token_urlsafe(32)
@@ -108,7 +109,7 @@ def create_refresh_token(user_id: str) -> Tuple[str, str, datetime]:
         "type": "refresh",
         "jti": raw_token,  # The actual refresh token
         "exp": expire,
-        "iat": datetime.utcnow(),
+        "iat": utc_now(),
     }
     
     jwt_token = jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALG)

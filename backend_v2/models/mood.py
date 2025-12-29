@@ -11,6 +11,7 @@ from sqlalchemy import String, Text, Float, Boolean, Integer, DateTime, ForeignK
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend_v2.db.base import Base
+from backend_v2.utils.time import utc_now
 
 if TYPE_CHECKING:
     from backend_v2.models.user import User
@@ -66,14 +67,14 @@ class Mood(Base):
     )  # "minimal", "chill", "chatty"
     is_default: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, 
-        default=datetime.utcnow, 
+        DateTime(timezone=True),
+        default=utc_now,
         nullable=False
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, 
-        default=datetime.utcnow, 
-        onupdate=datetime.utcnow,
+        DateTime(timezone=True),
+        default=utc_now,
+        onupdate=utc_now,
         nullable=False
     )
     
@@ -116,9 +117,9 @@ class MoodProfile(Base):
     summary_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     weights_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # JSON object
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, 
-        default=datetime.utcnow, 
-        onupdate=datetime.utcnow,
+        DateTime(timezone=True),
+        default=utc_now,
+        onupdate=utc_now,
         nullable=False
     )
     

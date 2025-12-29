@@ -10,7 +10,6 @@ All token endpoints set HttpOnly cookies for browser clients
 and also return tokens in response body for API clients.
 """
 import logging
-from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status, Response
 from fastapi.security import OAuth2PasswordRequestForm
@@ -46,6 +45,7 @@ from backend_v2.config import (
     COOKIE_SAMESITE,
     COOKIE_DOMAIN,
 )
+from backend_v2.utils.time import utc_now, ensure_utc
 
 logger = logging.getLogger("ai-dj.auth")
 
@@ -314,14 +314,15 @@ async def refresh_tokens(
         )
     
     # Check if expired
-    if datetime.utcnow() > token_record.expires_at:
+    expires_at = ensure_utc(token_record.expires_at)
+    if expires_at is None or utc_now() > expires_at:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Refresh token expired",
         )
     
     # Revoke old token (rotation)
-    token_record.revoked_at = datetime.utcnow()
+    token_record.revoked_at = utc_now()
     
     # Generate new tokens
     access_token = create_access_token(user_id)
@@ -377,7 +378,7 @@ async def logout(
             token_record = result.scalar_one_or_none()
             
             if token_record:
-                token_record.revoked_at = datetime.utcnow()
+                token_record.revoked_at = utc_now()
                 await db.commit()
                 logger.info(f"User {user_id} logged out")
         except TokenError:

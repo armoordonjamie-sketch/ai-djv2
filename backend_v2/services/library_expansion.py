@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend_v2.models.existing import Song
 from backend_v2.config import MAX_CONCURRENT_DOWNLOADS
+from backend_v2.utils.time import utc_now, ensure_utc
 
 logger = logging.getLogger("ai-dj.library_expansion")
 
@@ -25,7 +26,7 @@ class LibraryExpansionService:
         self._task: Optional[asyncio.Task] = None
         self._pending_queries: Set[str] = set()
         self._active_downloads = 0
-        self._last_expansion = datetime.min
+        self._last_expansion = ensure_utc(datetime.min)
         self._cooldown = timedelta(minutes=5)  # Min time between expansions
     
     async def start(self):
@@ -62,7 +63,8 @@ class LibraryExpansionService:
         from backend_v2.services.persona import DJPersona
         
         # Check cooldown
-        if datetime.utcnow() - self._last_expansion < self._cooldown:
+        last_expansion = ensure_utc(self._last_expansion) or utc_now()
+        if utc_now() - last_expansion < self._cooldown:
             return 0
         
         # Count available songs
@@ -109,7 +111,7 @@ class LibraryExpansionService:
             asyncio.create_task(self._download_song(db, artist.strip(), title.strip(), query))
             enqueued += 1
         
-        self._last_expansion = datetime.utcnow()
+        self._last_expansion = utc_now()
         logger.info(f"Enqueued {enqueued} downloads for library expansion")
         return enqueued
     

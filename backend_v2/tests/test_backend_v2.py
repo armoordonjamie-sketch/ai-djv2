@@ -10,7 +10,7 @@ class TestTTSSanitization:
     
     def test_sanitize_bpm_mentions(self):
         """Test removal of BPM mentions."""
-        from backend.integrations.openrouter import OpenRouterClient
+        from backend_v2.integrations.openrouter import OpenRouterClient
         client = OpenRouterClient()
         
         test_cases = [
@@ -26,7 +26,7 @@ class TestTTSSanitization:
     
     def test_sanitize_key_mentions(self):
         """Test removal of musical key mentions."""
-        from backend.integrations.openrouter import OpenRouterClient
+        from backend_v2.integrations.openrouter import OpenRouterClient
         client = OpenRouterClient()
         
         test_cases = [
@@ -44,7 +44,7 @@ class TestTTSSanitization:
     
     def test_sanitize_technical_terms(self):
         """Test removal of FFmpeg and audio processing terms."""
-        from backend.integrations.openrouter import OpenRouterClient
+        from backend_v2.integrations.openrouter import OpenRouterClient
         client = OpenRouterClient()
         
         test_cases = [
@@ -61,7 +61,7 @@ class TestTTSSanitization:
     
     def test_context_sanitization_removes_technical_fields(self):
         """Test that speech context removes technical metadata."""
-        from backend.integrations.openrouter import OpenRouterClient
+        from backend_v2.integrations.openrouter import OpenRouterClient
         client = OpenRouterClient()
         
         context = {
@@ -92,45 +92,34 @@ class TestMusicBrainzClient:
     @pytest.mark.asyncio
     async def test_client_initialization(self):
         """Test client initializes correctly."""
-        from backend.integrations.musicbrainz import MusicBrainzClient
+        from backend_v2.integrations.metadata.musicbrainz import MusicBrainzClient
         client = MusicBrainzClient()
         
-        assert client.enabled is True
         assert "musicbrainz.org" in client.base_url
         assert "User-Agent" in client.headers
     
     @pytest.mark.asyncio
     async def test_rate_limiting(self):
         """Test that rate limiting delays requests."""
-        from backend.integrations.musicbrainz import MusicBrainzClient
-        import time
+        from backend_v2.integrations.metadata.musicbrainz import MusicBrainzClient
         
         client = MusicBrainzClient()
-        
-        # Simulate two rapid requests
-        client._last_request_time = time.time()
-        
-        # Next request should be delayed
-        start = time.time()
-        # Just check the rate limit logic, don't actually make request
-        time_since_last = time.time() - client._last_request_time
-        
-        assert time_since_last < client._rate_limit_delay
-    
+        assert client.rate_limiter.min_interval > 0
+
     @pytest.mark.asyncio
     async def test_cache_storage_and_retrieval(self):
         """Test caching works correctly."""
-        from backend.integrations.musicbrainz import MusicBrainzClient
+        from backend_v2.integrations.metadata.musicbrainz import MusicBrainzClient
         client = MusicBrainzClient()
         
         test_key = "test_cache_key"
         test_data = [{"name": "Test Song", "artist": "Test Artist"}]
         
         # Store in cache
-        client._set_cache(test_key, test_data)
+        client._set_cached(test_key, test_data)
         
         # Retrieve from cache
-        cached = client._get_from_cache(test_key)
+        cached = client._get_cached(test_key)
         
         assert cached == test_data
 
@@ -139,13 +128,35 @@ class TestListenBrainzClient:
     """Tests for ListenBrainz API client."""
     
     @pytest.mark.asyncio
-    async def test_client_initialization(self):
+    async def test_client_initialization(self, monkeypatch):
         """Test client initializes correctly."""
-        from backend.integrations.listenbrainz import ListenBrainzClient
-        client = ListenBrainzClient()
-        
-        assert client.enabled is True
+        from backend_v2.integrations.metadata import listenbrainz
+
+        monkeypatch.setattr(listenbrainz, "LISTENBRAINZ_USER_TOKEN", "test-token")
+        client = listenbrainz.ListenBrainzClient()
+
         assert "listenbrainz.org" in client.base_url
+        assert client.headers["Authorization"] == "Token test-token"
+
+    @pytest.mark.asyncio
+    async def test_request_returns_payload(self, monkeypatch):
+        """Test request path returns parsed JSON."""
+        from backend_v2.integrations.metadata import listenbrainz
+
+        monkeypatch.setattr(listenbrainz, "LISTENBRAINZ_USER_TOKEN", "test-token")
+        client = listenbrainz.ListenBrainzClient()
+
+        mock_response = Mock()
+        mock_response.raise_for_status = Mock()
+        mock_response.json.return_value = {"ok": True}
+
+        mock_http = AsyncMock()
+        mock_http.get = AsyncMock(return_value=mock_response)
+
+        with patch.object(client, "_get_client", new=AsyncMock(return_value=mock_http)):
+            result = await client._request("user/test/listens", params={"count": 1})
+
+        assert result == {"ok": True}
 
 
 class TestQueueBackpressure:
@@ -153,11 +164,11 @@ class TestQueueBackpressure:
     
     def test_queue_has_maxsize(self):
         """Test that DJLoop creates bounded queue."""
-        from backend.orchestration.loop import DJLoop
-        loop = DJLoop()
+        from backend_v2.orchestration.loop import DJLoop
+        loop = DJLoop(user_id="test-user", session_id="test-session")
         
         # Check the maxsize is set
-        assert loop.max_queued_segments == 2
+        assert loop.segment_queue.maxsize == 3
 
 
 # Run with: pytest backend/tests/test_backend_v2.py -v

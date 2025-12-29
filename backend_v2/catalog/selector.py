@@ -82,9 +82,7 @@ def score_track_relevance(
             score += (1.0 - valence_dist) * 0.3
         
         # Danceability match (weight: 0.2, if target available)
-        if (track.features.danceability is not None and 
-            hasattr(bundle.mood, 'danceability_target') and 
-            bundle.mood.danceability_target is not None):
+        if track.features.danceability is not None and bundle.mood.danceability_target is not None:
             dance_dist = abs(track.features.danceability - bundle.mood.danceability_target)
             score += (1.0 - dance_dist) * 0.2
         
@@ -220,15 +218,9 @@ async def search_catalog_tracks(
     query_parts = []
     
     # Add genre seeds from mood
-    try:
-        import json
-        if hasattr(bundle.mood, 'genre_seeds_json') and bundle.mood.genre_seeds_json:
-            genre_seeds = json.loads(bundle.mood.genre_seeds_json)
-            if genre_seeds:
-                # Use first 2 genre seeds for query
-                query_parts.extend(genre_seeds[:2])
-    except Exception as e:
-        logger.debug(f"Could not parse genre seeds: {e}")
+    if bundle.mood.genre_seeds:
+        # Use first 2 genre seeds for query
+        query_parts.extend(bundle.mood.genre_seeds[:2])
     
     # Add user's favorite genres if no mood genres
     if not query_parts:

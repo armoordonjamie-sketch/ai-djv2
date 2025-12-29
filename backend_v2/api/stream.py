@@ -29,6 +29,7 @@ from backend_v2.streaming.pipeline import (
 )
 from backend_v2.orchestration.events import get_event_emitter
 from backend_v2.config import MAX_SESSIONS_TOTAL
+from backend_v2.utils.time import utc_isoformat, utc_now
 
 logger = logging.getLogger("ai-dj.stream")
 
@@ -47,7 +48,6 @@ async def start_stream(
     Idempotent: returns existing session if active.
     Enforces MAX_SESSIONS_PER_USER (1) and MAX_SESSIONS_TOTAL.
     """
-    from datetime import datetime
     from backend_v2.models.existing import Session
     
     # Gate: Require onboarding before streaming
@@ -86,7 +86,7 @@ async def start_stream(
             user_id=current_user.id,
             context_id=context_id,
             mood_id=data.mood_id,
-            started_at=datetime.utcnow().isoformat() + "Z",
+            started_at=utc_isoformat(utc_now()),
             mode="autonomous",
         )
         db.add(db_session)

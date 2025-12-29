@@ -18,6 +18,8 @@ from typing import Optional, Dict, Any, List
 
 import httpx
 
+from backend_v2.utils.time import utc_now, ensure_utc
+
 logger = logging.getLogger("ai-dj.deezer")
 
 # Deezer API configuration
@@ -64,22 +66,28 @@ class DeezerClient:
         """Get cached result if valid."""
         if key in self._cache:
             result, timestamp = self._cache[key]
-            if datetime.utcnow() - timestamp < self._cache_ttl:
+            timestamp = ensure_utc(timestamp)
+            if timestamp is not None and utc_now() - timestamp < self._cache_ttl:
                 return result
             del self._cache[key]
         return None
     
     def _set_cached(self, key: str, result: Any):
         """Store result in cache."""
-        self._cache[key] = (result, datetime.utcnow())
+        self._cache[key] = (result, utc_now())
     
     async def _rate_limit_wait(self):
         """Wait if we're hitting rate limits."""
-        now = datetime.utcnow()
+        now = utc_now()
         
         # Remove old request times outside the window
         cutoff = now - timedelta(seconds=self._rate_window)
-        self._request_times = [t for t in self._request_times if t > cutoff]
+        recent_times: List[datetime] = []
+        for t in self._request_times:
+            t = ensure_utc(t)
+            if t is not None and t > cutoff:
+                recent_times.append(t)
+        self._request_times = recent_times
         
         # If at limit, wait for the oldest request to expire
         if len(self._request_times) >= self._rate_limit:

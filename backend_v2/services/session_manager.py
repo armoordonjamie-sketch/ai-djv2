@@ -6,10 +6,10 @@ Each session has its own orchestration loop and segment queue.
 import asyncio
 import logging
 import uuid
-from datetime import datetime
 from typing import Dict, Optional, Any
 
 from backend_v2.config import MAX_SESSIONS_PER_USER, MAX_SESSIONS_TOTAL
+from backend_v2.utils.time import utc_now, ensure_utc
 
 logger = logging.getLogger("ai-dj.session_manager")
 
@@ -28,8 +28,8 @@ class SessionRunner:
         self.session_id = session_id
         self.mood_id = mood_id
         self.context_name = context_name  # Renamed from context_id
-        self.started_at = datetime.utcnow()
-        self.last_activity = datetime.utcnow()
+        self.started_at = utc_now()
+        self.last_activity = utc_now()
         
         # Segment queue for this user's stream
         self.segment_queue: asyncio.Queue = asyncio.Queue()
@@ -76,7 +76,7 @@ class SessionRunner:
     
     def touch(self):
         """Update last activity timestamp."""
-        self.last_activity = datetime.utcnow()
+        self.last_activity = utc_now()
     
     def get_loop_state(self) -> Dict[str, Any]:
         """Get current DJ loop state."""
@@ -187,14 +187,15 @@ class DJSessionManager:
     
     async def cleanup_idle_sessions(self, max_idle_minutes: int = 10):
         """Stop sessions that have been idle too long."""
-        now = datetime.utcnow()
+        now = utc_now()
         idle_threshold = max_idle_minutes * 60  # seconds
         
         to_remove = []
         
         async with self._lock:
             for user_id, session in self._sessions.items():
-                idle_seconds = (now - session.last_activity).total_seconds()
+                last_activity = ensure_utc(session.last_activity) or now
+                idle_seconds = (now - last_activity).total_seconds()
                 if idle_seconds > idle_threshold:
                     to_remove.append(user_id)
             

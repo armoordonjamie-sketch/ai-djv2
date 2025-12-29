@@ -2,7 +2,7 @@
 from datetime import datetime
 from typing import Optional, List
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 
 class MoodCreate(BaseModel):
@@ -33,8 +33,7 @@ class MoodProfileResponse(BaseModel):
     weights_json: Optional[str]
     updated_at: datetime
     
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class MoodResponse(BaseModel):
@@ -51,5 +50,4 @@ class MoodResponse(BaseModel):
     updated_at: datetime
     profile: Optional[MoodProfileResponse] = None
     
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

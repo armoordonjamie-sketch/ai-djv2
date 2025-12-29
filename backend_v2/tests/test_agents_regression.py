@@ -67,11 +67,10 @@ class TestHistoryItemAccess:
         # Mock catalog selector to return None (triggers fallback)
         with patch("backend_v2.orchestration.agents.select_diverse_track") as mock_select:
             mock_select.return_value = None
-            
-            # Mock local library selection
-            with patch("backend_v2.orchestration.agents.get_scored_candidates") as mock_candidates:
-                mock_candidates.return_value = []
-                
+
+            with patch("backend_v2.orchestration.agents.select_track") as mock_fallback:
+                mock_fallback.return_value = None
+
                 # Should not crash when accessing HistoryItem attributes
                 result = await select_track_via_catalog(
                     db=db,
@@ -81,7 +80,8 @@ class TestHistoryItemAccess:
                     history_ids=["song-1", "song-2"],
                     use_intent_flow=True
                 )
-                
+
+                mock_fallback.assert_called_once()
                 # Should fall back to None (no candidates)
                 assert result is None
 
@@ -217,7 +217,7 @@ class TestSongFeaturesAccess:
                     db.add = MagicMock()
                     db.flush = AsyncMock()
                     
-                    mock_result = AsyncMock()
+                    mock_result = MagicMock()
                     mock_result.scalar_one_or_none.return_value = mock_song
                     db.execute = AsyncMock(return_value=mock_result)
                     
@@ -310,7 +310,7 @@ class TestSongFeaturesAccess:
                     
                     db.add = MagicMock()
                     db.flush = AsyncMock()
-                    mock_result = AsyncMock()
+                    mock_result = MagicMock()
                     mock_result.scalar_one_or_none.return_value = mock_song
                     db.execute = AsyncMock(return_value=mock_result)
                     

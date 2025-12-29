@@ -8,10 +8,10 @@ Tests:
 """
 import pytest
 from unittest.mock import patch, AsyncMock, MagicMock
-from datetime import datetime
 from httpx import Response
 
 from backend_v2.api.onboard import OnboardSubmitPayload
+from backend_v2.utils.time import utc_now
 
 
 class TestOnboardGatesStream:
@@ -44,7 +44,7 @@ class TestOnboardGatesStream:
     async def test_onboarded_user_allowed(self):
         """User with onboarded_at can proceed."""
         mock_user = MagicMock()
-        mock_user.onboarded_at = datetime.utcnow()
+        mock_user.onboarded_at = utc_now()
         mock_user.id = "test-user-id"
         
         assert mock_user.onboarded_at is not None
@@ -113,7 +113,7 @@ class TestOnboardSubmit:
         
         assert payload.user_id == "123"
         assert payload.display_name == "Jamie"
-        assert payload.favorite_genres is None  # Accepted null
+        assert payload.favorite_genres == []  # Nulls are coerced to empty list
         assert payload.favorite_songs == ["Creep"]
 
 
@@ -203,7 +203,8 @@ class TestLLMProxy:
                     authorization="Bearer wrong-secret",
                 )
             
-            assert "401" in str(exc_info.value) or "Invalid" in str(exc_info.value)
+            assert exc_info.value.status_code == 401
+            assert exc_info.value.detail == "Invalid authorization"
 
 
 class TestPromptIntegration:

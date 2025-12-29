@@ -18,7 +18,9 @@ from enum import Enum
 from typing import Optional, Dict, Any
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict, field_serializer
+
+from backend_v2.utils.time import utc_now, utc_isoformat
 
 
 class StatusCategory(str, Enum):
@@ -119,8 +121,7 @@ class StatusEventPayload(BaseModel):
     error_code: Optional[str] = None
     retry_count: Optional[int] = None
     
-    class Config:
-        extra = "allow"  # Allow additional fields
+    model_config = ConfigDict(extra="allow")
 
 
 class StatusEvent(BaseModel):
@@ -134,7 +135,7 @@ class StatusEvent(BaseModel):
     """
     # Identity
     id: str = Field(..., description="Unique event ID (UUID)")
-    ts: datetime = Field(default_factory=datetime.utcnow, description="Event timestamp")
+    ts: datetime = Field(default_factory=utc_now, description="Event timestamp")
     user_id: str = Field(..., description="User this event belongs to")
     session_id: Optional[str] = Field(None, description="Session ID if applicable")
     correlation_id: Optional[str] = Field(None, description="Links related events")
@@ -157,10 +158,11 @@ class StatusEvent(BaseModel):
     # Severity
     severity: Severity = Field(default=Severity.INFO, description="Event severity")
     
-    class Config:
-        json_encoders = {
-            datetime: lambda v: v.isoformat() + "Z"
-        }
+    model_config = ConfigDict()
+
+    @field_serializer("ts")
+    def serialize_ts(self, value: datetime) -> str:
+        return utc_isoformat(value)
 
 
 # === WebSocket Event Format ===

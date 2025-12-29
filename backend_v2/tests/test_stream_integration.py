@@ -36,7 +36,7 @@ class TestWebSocketEventEmitter:
         # Verify message format
         import json
         sent_message = json.loads(ws_user_a.send_text.call_args[0][0])
-        assert sent_message["v"] == 1
+        assert sent_message["v"] == 2
         assert sent_message["type"] == "test_event"
         assert sent_message["data"]["data"] == "for_a"
     
@@ -99,7 +99,7 @@ class TestEventFormat:
         ws.send_text.assert_called_once()
         event = json.loads(ws.send_text.call_args[0][0])
         
-        assert event["v"] == 1
+        assert event["v"] == 2
         assert event["type"] == "now_playing"
         assert event["data"]["song_uuid"] == "test-uuid"
         assert event["data"]["title"] == "Test Song"

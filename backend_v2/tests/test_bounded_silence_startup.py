@@ -51,7 +51,11 @@ class TestBoundedSilenceStartup:
                 try:
                     # Mock the emitter
                     with patch('backend_v2.orchestration.events.get_event_emitter') as mock_emitter:
-                        mock_emitter.return_value = AsyncMock()
+                        emitter = MagicMock()
+                        emitter.emit_status = AsyncMock()
+                        emitter.emit_now_playing = AsyncMock()
+                        emitter.emit_stream_status = AsyncMock()
+                        mock_emitter.return_value = emitter
                         await asyncio.wait_for(
                             pipeline._segment_feeder(),
                             timeout=2.0
@@ -111,7 +115,11 @@ class TestBoundedSilenceStartup:
             async def run_feeder_briefly():
                 try:
                     with patch('backend_v2.orchestration.events.get_event_emitter') as mock_emitter:
-                        mock_emitter.return_value = AsyncMock()
+                        emitter = MagicMock()
+                        emitter.emit_status = AsyncMock()
+                        emitter.emit_now_playing = AsyncMock()
+                        emitter.emit_stream_status = AsyncMock()
+                        mock_emitter.return_value = emitter
                         await asyncio.wait_for(
                             pipeline._segment_feeder(),
                             timeout=5.0
@@ -177,7 +185,11 @@ class TestBoundedSilenceStartup:
         async def run_feeder_with_delayed_segment():
             try:
                 with patch('backend_v2.orchestration.events.get_event_emitter') as mock_emitter:
-                    mock_emitter.return_value = AsyncMock()
+                    emitter = MagicMock()
+                    emitter.emit_status = AsyncMock()
+                    emitter.emit_now_playing = AsyncMock()
+                    emitter.emit_stream_status = AsyncMock()
+                    mock_emitter.return_value = emitter
                     await asyncio.wait_for(
                         pipeline._segment_feeder(),
                         timeout=10.0
@@ -232,7 +244,11 @@ class TestBoundedSilenceStartup:
         async def run_feeder_track_errors():
             try:
                 with patch('backend_v2.orchestration.events.get_event_emitter') as mock_emitter:
-                    mock_emitter.return_value = AsyncMock()
+                    emitter = MagicMock()
+                    emitter.emit_status = AsyncMock()
+                    emitter.emit_now_playing = AsyncMock()
+                    emitter.emit_stream_status = AsyncMock()
+                    mock_emitter.return_value = emitter
                     await asyncio.wait_for(
                         pipeline._segment_feeder(),
                         timeout=3.0

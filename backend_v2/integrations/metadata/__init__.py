@@ -1,6 +1,7 @@
 # Metadata providers package
 from backend_v2.integrations.metadata.musicbrainz import MusicBrainzClient, get_musicbrainz_client
 from backend_v2.integrations.metadata.apple_music import AppleMusicClient, get_apple_music_client
+from backend_v2.integrations.metadata.listenbrainz import ListenBrainzClient, get_listenbrainz_client
 from backend_v2.integrations.metadata.enrichment import (
     MetadataEnrichmentService,
     get_metadata_service,
@@ -12,6 +13,8 @@ __all__ = [
     "get_musicbrainz_client",
     "AppleMusicClient", 
     "get_apple_music_client",
+    "ListenBrainzClient",
+    "get_listenbrainz_client",
     "MetadataEnrichmentService",
     "get_metadata_service",
     "enrich_song_metadata",

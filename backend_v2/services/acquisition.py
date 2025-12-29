@@ -6,7 +6,6 @@ to obtain audio files for TrackIntents with robust fallbacks.
 import asyncio
 import logging
 import os
-from datetime import datetime
 from typing import Optional, List, TYPE_CHECKING
 
 from sqlalchemy import select
@@ -15,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend_v2.models.track_intent import TrackIntent, AcquisitionJob, TrackIntentStatus, AcquisitionJobStatus
 from backend_v2.models.existing import Song
 from backend_v2.tools.song_downloader import get_song_downloader
+from backend_v2.utils.time import utc_now
 
 if TYPE_CHECKING:
     from backend_v2.catalog.providers import CatalogTrack
@@ -219,7 +219,7 @@ class AcquisitionService:
                     provider=provider.name,
                     source_url=None,  # Will be set by provider if applicable
                     status=AcquisitionJobStatus.RUNNING.value,
-                    started_at=datetime.utcnow()
+                    started_at=utc_now()
                 )
                 db.add(job)
                 await db.flush()
@@ -230,7 +230,7 @@ class AcquisitionService:
                 song_uuid = await provider.acquire(intent, timeout=timeout_per_provider, db=db)
                 
                 # Update job status
-                job.completed_at = datetime.utcnow()
+                job.completed_at = utc_now()
                 job.attempt_count += 1
                 
                 if song_uuid:
@@ -275,7 +275,7 @@ class AcquisitionService:
                     # Update intent - song exists, so foreign key should work
                     intent.status = TrackIntentStatus.ACQUIRED.value
                     intent.acquired_song_uuid = song_uuid
-                    intent.resolved_at = datetime.utcnow()
+                    intent.resolved_at = utc_now()
                     
                     try:
                         await db.commit()
@@ -311,7 +311,7 @@ class AcquisitionService:
                 
                 job.status = AcquisitionJobStatus.FAILED.value
                 job.last_error = str(e)
-                job.completed_at = datetime.utcnow()
+                job.completed_at = utc_now()
                 
                 try:
                     await db.commit()
@@ -322,7 +322,7 @@ class AcquisitionService:
         # All providers failed
         intent.status = TrackIntentStatus.FAILED.value
         intent.failure_reason = "All acquisition providers failed"
-        intent.resolved_at = datetime.utcnow()
+        intent.resolved_at = utc_now()
         await db.commit()
         
         logger.error(f"❌ Acquisition failed for: {intent.artist} - {intent.title}")

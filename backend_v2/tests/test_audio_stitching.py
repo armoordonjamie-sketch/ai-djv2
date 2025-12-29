@@ -105,11 +105,12 @@ class TestAudioStitching(unittest.TestCase):
         # Ensure ffmpeg.filter returns a stream too (for amix)
         mock_ffmpeg.filter.return_value = stream
         
-        create_dj_mix(
-            song1_path="song1.mp3",
-            song2_path="song2.mp3",
-            user_id="test_user"
-        )
+        with patch('backend_v2.audio.transitions.ffmpeg.filter', return_value=stream):
+            create_dj_mix(
+                song1_path="song1.mp3",
+                song2_path="song2.mp3",
+                user_id="test_user"
+            )
         
         args, kwargs = mock_output.call_args
         output_filename = args[1]

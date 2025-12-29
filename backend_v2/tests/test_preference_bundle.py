@@ -15,6 +15,7 @@ from backend_v2.services.preference_bundle import (
     FeedbackData,
     FeedbackItem,
     HistoryData,
+    UserProfileData,
     PreferenceBundleCache,
     get_bundle_cache,
     build_preference_bundle,
@@ -40,6 +41,7 @@ class TestPreferenceBundleCache:
             mood_profile=MoodProfileData(),
             feedback=FeedbackData(),
             history=HistoryData(),
+            profile=UserProfileData(),
             agent_settings={},
             prompt_templates={},
         )
@@ -71,6 +73,7 @@ class TestPreferenceBundleCache:
             mood_profile=MoodProfileData(),
             feedback=FeedbackData(),
             history=HistoryData(),
+            profile=UserProfileData(),
             agent_settings={},
             prompt_templates={},
         )
@@ -100,6 +103,7 @@ class TestCandidateScoring:
             mood_profile=MoodProfileData(),
             feedback=FeedbackData(),
             history=HistoryData(),
+            profile=UserProfileData(),
             agent_settings={},
             prompt_templates={},
         )
@@ -126,6 +130,7 @@ class TestCandidateScoring:
                 ]
             ),
             history=HistoryData(),
+            profile=UserProfileData(),
             agent_settings={},
             prompt_templates={},
         )
@@ -152,6 +157,7 @@ class TestCandidateScoring:
                 ]
             ),
             history=HistoryData(),
+            profile=UserProfileData(),
             agent_settings={},
             prompt_templates={},
         )
@@ -174,6 +180,7 @@ class TestCandidateScoring:
             mood_profile=MoodProfileData(),
             feedback=FeedbackData(),
             history=HistoryData(recent_plays=["song-1", "song-2"]),
+            profile=UserProfileData(),
             agent_settings={},
             prompt_templates={},
         )
@@ -196,6 +203,7 @@ class TestCandidateScoring:
             mood_profile=MoodProfileData(),
             feedback=FeedbackData(),
             history=HistoryData(),
+            profile=UserProfileData(),
             agent_settings={},
             prompt_templates={},
         )
@@ -234,6 +242,7 @@ class TestPreferenceBundleHelpers:
             mood_profile=MoodProfileData(),
             feedback=FeedbackData(),
             history=HistoryData(),
+            profile=UserProfileData(),
             agent_settings={
                 "track_selector": {"thinking_budget": 3000, "temperature": 0.8}
             },
@@ -259,6 +268,7 @@ class TestPreferenceBundleHelpers:
             mood_profile=MoodProfileData(),
             feedback=FeedbackData(),
             history=HistoryData(),
+            profile=UserProfileData(),
             agent_settings={},
             prompt_templates={
                 "track_selection_system": "Custom prompt here"
@@ -287,6 +297,7 @@ class TestPreferenceBundleHelpers:
                 ]
             ),
             history=HistoryData(),
+            profile=UserProfileData(),
             agent_settings={},
             prompt_templates={},
         )

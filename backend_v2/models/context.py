@@ -10,6 +10,7 @@ from sqlalchemy import String, Text, DateTime, ForeignKey, UniqueConstraint, Ind
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend_v2.db.base import Base
+from backend_v2.utils.time import utc_now
 
 if TYPE_CHECKING:
     from backend_v2.models.user import User
@@ -40,9 +41,9 @@ class UserContext(Base):
     raw_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     parsed_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # JSON stored as text
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, 
-        default=datetime.utcnow, 
-        onupdate=datetime.utcnow,
+        DateTime(timezone=True),
+        default=utc_now,
+        onupdate=utc_now,
         nullable=False
     )
     

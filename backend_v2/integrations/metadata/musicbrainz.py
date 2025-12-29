@@ -17,6 +17,7 @@ from typing import Optional, Dict, Any, List
 import httpx
 
 from backend_v2.config import MUSICBRAINZ_CONTACT_EMAIL, MUSICBRAINZ_RATE_LIMIT
+from backend_v2.utils.time import utc_now, ensure_utc
 
 logger = logging.getLogger("ai-dj.musicbrainz")
 
@@ -90,14 +91,15 @@ class MusicBrainzClient:
         """Get cached result if valid."""
         if key in self._cache:
             result, timestamp = self._cache[key]
-            if datetime.utcnow() - timestamp < self._cache_ttl:
+            timestamp = ensure_utc(timestamp)
+            if timestamp is not None and utc_now() - timestamp < self._cache_ttl:
                 return result
             del self._cache[key]
         return None
     
     def _set_cached(self, key: str, result: Any):
         """Store result in cache."""
-        self._cache[key] = (result, datetime.utcnow())
+        self._cache[key] = (result, utc_now())
     
     async def _request(
         self,

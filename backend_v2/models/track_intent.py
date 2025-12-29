@@ -17,6 +17,7 @@ from sqlalchemy import String, Text, Float, Integer, DateTime, ForeignKey, Index
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend_v2.db.base import Base
+from backend_v2.utils.time import utc_now
 
 if TYPE_CHECKING:
     from backend_v2.models.user import User
@@ -27,6 +28,8 @@ if TYPE_CHECKING:
 class TrackIntentStatus(str, Enum):
     """Status of a track intent."""
     PENDING = "PENDING"
+    # Legacy alias for backwards compatibility with tests and older code.
+    PENDING_ACQUISITION = "PENDING"
     ACQUIRED = "ACQUIRED"
     FAILED = "FAILED"
     CANCELLED = "CANCELLED"
@@ -114,11 +117,11 @@ class TrackIntent(Base):
     
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
-        DateTime,
-        default=datetime.utcnow,
+        DateTime(timezone=True),
+        default=utc_now,
         nullable=False
     )
-    resolved_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    resolved_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     
     # Relationships
     acquisition_jobs: Mapped[list["AcquisitionJob"]] = relationship(
@@ -185,12 +188,12 @@ class AcquisitionJob(Base):
     
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
-        DateTime,
-        default=datetime.utcnow,
+        DateTime(timezone=True),
+        default=utc_now,
         nullable=False
     )
-    started_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
-    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     
     # Relationships
     intent: Mapped["TrackIntent"] = relationship("TrackIntent", back_populates="acquisition_jobs")

@@ -7,7 +7,6 @@ Evidence: Implementing Phase 4 of implementation_plan.md
 """
 import asyncio
 import logging
-from datetime import datetime
 from typing import Optional, Dict, Any, List, Tuple
 
 from sqlalchemy import select
@@ -37,6 +36,7 @@ from backend_v2.models.track_intent import TrackIntent, TrackIntentStatus
 from backend_v2.monitoring.metrics import get_metrics
 from backend_v2.orchestration.state import DJState, add_decision_step
 from backend_v2.models.existing import Song
+from backend_v2.utils.time import utc_isoformat, utc_now
 
 logger = logging.getLogger("ai-dj.agents")
 
@@ -557,13 +557,15 @@ async def select_track_via_catalog(
         # Convert prev_song to CatalogTrack if available
         prev_catalog_track = None
         if prev_song:
+            prev_features = prev_song.get("features") or {}
             prev_catalog_track = CatalogTrack(
                 title=prev_song.get('title', ''),
                 artist=prev_song.get('artist', ''),
                 features=AudioFeatures(
-                    energy=prev_song.get('energy'),
-                    valence=prev_song.get('valence'),
-                    tempo=prev_song.get('tempo'),
+                    energy=prev_features.get("energy"),
+                    valence=prev_features.get("valence"),
+                    tempo=prev_features.get("tempo"),
+                    danceability=prev_features.get("danceability"),
                 )
             )
         
@@ -608,9 +610,9 @@ async def select_track_via_catalog(
         logger.info(f"📥 Acquiring audio file...")
         acquisition_service = get_acquisition_service()
         
-        start_time = datetime.utcnow()
+        start_time = utc_now()
         success = await acquisition_service.acquire(db, intent, timeout_per_provider=120)
-        duration_sec = (datetime.utcnow() - start_time).total_seconds()
+        duration_sec = (utc_now() - start_time).total_seconds()
         
         if success:
             logger.info(f"✅ Acquisition successful in {duration_sec:.1f}s: {intent.artist} - {intent.title}")
@@ -1100,7 +1102,7 @@ async def persist_segment(
         duration_sec=duration_sec,
         tts_used=1 if tts_used else 0,
         banter_text=banter_text,
-        created_at=datetime.utcnow().isoformat() + "Z",
+        created_at=utc_isoformat(utc_now()),
     )
     db.add(segment)
     await db.flush()
@@ -1124,7 +1126,7 @@ async def persist_play_history(
         user_id=user_id,
         mood_id=mood_id,
         song_uuid=song_uuid,
-        started_at=datetime.utcnow().isoformat() + "Z",
+        started_at=utc_isoformat(utc_now()),
         transition_type=transition_type,
     )
     db.add(history)

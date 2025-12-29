@@ -12,7 +12,6 @@ import httpx
 import json
 import logging
 import re
-from datetime import datetime
 from typing import Optional, Dict, Any, List, TYPE_CHECKING
 
 from backend_v2.config import (
@@ -21,6 +20,7 @@ from backend_v2.config import (
     THINKING_BUDGET_TRANSITION,
     THINKING_BUDGET_SPEECH,
 )
+from backend_v2.utils.time import utc_isoformat, utc_now
 
 if TYPE_CHECKING:
     from backend_v2.services.preference_bundle import PreferenceBundle
@@ -723,21 +723,9 @@ Generate the transition plan:"""
             history_section = f"\nRECENT BANTER (don't repeat):\n- " + "\n- ".join(banter_history[-5:])
         
         # Extract mood-specific context for unique intros
-        mood_keywords = []
-        example_artists = []
-        intro_style = bundle.mood.dj_personality
-        
-        # Get mood metadata if available
-        try:
-            import json
-            if hasattr(bundle.mood, 'vibe_keywords_json') and bundle.mood.vibe_keywords_json:
-                mood_keywords = json.loads(bundle.mood.vibe_keywords_json)
-            if hasattr(bundle.mood, 'example_artists_json') and bundle.mood.example_artists_json:
-                example_artists = json.loads(bundle.mood.example_artists_json)
-            if hasattr(bundle.mood, 'intro_personality') and bundle.mood.intro_personality:
-                intro_style = bundle.mood.intro_personality
-        except (json.JSONDecodeError, AttributeError) as e:
-            logger.debug(f"Could not parse mood metadata: {e}")
+        mood_keywords = bundle.mood.vibe_keywords or []
+        example_artists = bundle.mood.example_artists or []
+        intro_style = bundle.mood.intro_personality or bundle.mood.dj_personality
         
         # Build mood context section
         mood_context = f"""
@@ -1006,7 +994,7 @@ async def store_llm_trace(
         response=response[:10000],
         model=model,
         thinking_budget=thinking_budget,
-        created_at=datetime.utcnow().isoformat() + "Z",
+        created_at=utc_isoformat(utc_now()),
     )
     db.add(trace)
     await db.flush()
