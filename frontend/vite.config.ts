@@ -9,7 +9,12 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['icon.svg', 'apple-touch-icon.png'],
+      includeAssets: [
+        'icon.svg', 
+        'apple-touch-icon.png',
+        'apple-touch-icon-152x152.png',
+        'apple-touch-icon-180x180.png',
+      ],
       manifest: {
         name: 'Jamify - Your AI DJ',
         short_name: 'Jamify',
@@ -20,6 +25,11 @@ export default defineConfig({
         orientation: 'portrait',
         scope: '/',
         start_url: '/',
+        // iOS-specific: ensure proper launch behavior
+        prefer_related_applications: false,
+        categories: ['music', 'entertainment'],
+        // iOS handles permissions differently - document this
+        // Note: iOS PWA audio requires user gesture to unlock AudioContext
         icons: [
           {
             src: 'pwa-192.png',
@@ -37,6 +47,34 @@ export default defineConfig({
             type: 'image/png',
             purpose: 'maskable',
           },
+          // iOS-specific icon sizes
+          {
+            src: 'apple-touch-icon-152x152.png',
+            sizes: '152x152',
+            type: 'image/png',
+          },
+          {
+            src: 'apple-touch-icon-180x180.png',
+            sizes: '180x180',
+            type: 'image/png',
+          },
+        ],
+        // Shortcuts for iOS 16.4+ PWA
+        shortcuts: [
+          {
+            name: 'Play Music',
+            short_name: 'Play',
+            description: 'Start your AI DJ experience',
+            url: '/player',
+            icons: [{ src: 'pwa-192.png', sizes: '192x192' }]
+          },
+          {
+            name: 'My Moods',
+            short_name: 'Moods',
+            description: 'Browse your personalized moods',
+            url: '/moods',
+            icons: [{ src: 'pwa-192.png', sizes: '192x192' }]
+          }
         ],
       },
       workbox: {

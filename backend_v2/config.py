@@ -23,7 +23,7 @@ DB_PATH: str = os.getenv("DB_PATH", "data/persistence.db")
 # =============================================================================
 JWT_SECRET: str = os.getenv("JWT_SECRET", "")
 JWT_ALG: str = os.getenv("JWT_ALG", "HS256")
-ACCESS_TOKEN_EXPIRES_MIN: int = int(os.getenv("ACCESS_TOKEN_EXPIRES_MIN", "30"))
+ACCESS_TOKEN_EXPIRES_MIN: int = int(os.getenv("ACCESS_TOKEN_EXPIRES_MIN", "1440"))
 REFRESH_TOKEN_EXPIRES_DAYS: int = int(os.getenv("REFRESH_TOKEN_EXPIRES_DAYS", "7"))
 
 
@@ -91,6 +91,7 @@ ELEVENLABS_ONBOARD_TOOL_ID: Optional[str] = os.getenv("ELEVENLABS_ONBOARD_TOOL_I
 ELEVENLABS_CUSTOM_LLM_SECRET: Optional[str] = os.getenv("ELEVENLABS_CUSTOM_LLM_SECRET")
 ONBOARD_TOOL_SECRET: Optional[str] = os.getenv("ONBOARD_TOOL_SECRET")
 OPENROUTER_ONBOARD_MODEL: str = os.getenv("OPENROUTER_ONBOARD_MODEL", "google/gemini-2.5-flash-lite")
+DEEZER_API_BASE: str = os.getenv("DEEZER_API_BASE", "https://api.deezer.com")
 
 
 # =============================================================================
@@ -225,7 +226,7 @@ ICY_METAINT: int = int(os.getenv("ICY_METAINT", "16000"))
 STREAM_STARTUP_MODE: str = os.getenv("STREAM_STARTUP_MODE", "defer")
 MAX_SILENCE_AHEAD_SEC: float = float(os.getenv("MAX_SILENCE_AHEAD_SEC", "3.0"))
 MAX_BUFFERED_AUDIO_SEC: float = float(os.getenv("MAX_BUFFERED_AUDIO_SEC", "20.0"))
-STREAM_STARTUP_TIMEOUT_SEC: int = int(os.getenv("STREAM_STARTUP_TIMEOUT_SEC", "60"))
+STREAM_STARTUP_TIMEOUT_SEC: int = int(os.getenv("STREAM_STARTUP_TIMEOUT_SEC", "120"))
 
 
 # =============================================================================

@@ -117,7 +117,7 @@ export default function OnboardingPage() {
       </header>
 
       {/* Content */}
-      <main className="flex-1 px-6 pb-6 overflow-auto">
+      <main className="flex-1 px-6 pb-6 overflow-auto scroll-container">
         <AnimatePresence mode="wait">
           {step === 1 && (
             <motion.div

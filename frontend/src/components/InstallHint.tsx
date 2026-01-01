@@ -70,7 +70,7 @@ export function InstallHint() {
         initial={{ opacity: 0, y: 50 }}
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: 50 }}
-        className="fixed bottom-20 left-4 right-4 z-50 max-w-md mx-auto"
+        className="fixed bottom-[calc(5rem+env(safe-area-inset-bottom,0px))] left-4 right-4 z-50 max-w-md mx-auto"
       >
         <div className="p-4 rounded-2xl bg-card/95 backdrop-blur-xl border border-border shadow-lg">
           <div className="flex items-start gap-3">

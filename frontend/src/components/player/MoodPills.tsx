@@ -9,7 +9,7 @@ import { triggerHaptic } from "@/lib/motion"
 interface MoodPillsProps {
   moods: Mood[]
   activeMoodId: string | null
-  onMoodSelect: (moodId: string) => void
+  onMoodSelect: (moodId: string, name?: string, color?: string) => void
   disabled?: boolean
 }
 
@@ -31,10 +31,10 @@ export function MoodPills({ moods, activeMoodId, onMoodSelect, disabled }: MoodP
     }
   }, [activeMoodId])
 
-  const handleSelect = (moodId: string) => {
-    if (disabled || moodId === activeMoodId) return
+  const handleSelect = (mood: Mood) => {
+    if (disabled || mood.id === activeMoodId) return
     triggerHaptic("light")
-    onMoodSelect(moodId)
+    onMoodSelect(mood.id, mood.name, mood.color)
   }
 
   return (
@@ -47,7 +47,7 @@ export function MoodPills({ moods, activeMoodId, onMoodSelect, disabled }: MoodP
               key={mood.id}
               ref={isActive ? activeRef : null}
               whileTap={{ scale: 0.95 }}
-              onClick={() => handleSelect(mood.id)}
+              onClick={() => handleSelect(mood)}
               disabled={disabled}
               className={cn(
                 "relative flex items-center gap-2 px-4 py-2.5 rounded-full",

@@ -7,7 +7,6 @@ Provides voice-based onboarding flow using ElevenLabs Conversational AI.
 """
 import json
 import logging
-from datetime import timedelta
 from typing import Optional, List, Literal
 
 import httpx
@@ -26,7 +25,7 @@ from backend_v2.config import (
     ELEVENLABS_ONBOARD_AGENT_ID,
     ONBOARD_TOOL_SECRET,
 )
-from backend_v2.utils.time import utc_now, ensure_utc
+from backend_v2.utils.time import utc_now
 
 logger = logging.getLogger("ai-dj.onboard")
 
@@ -55,6 +54,7 @@ class OnboardStatusResponse(BaseModel):
     """Response for onboarding status check."""
     onboarded: bool
     has_profile: bool
+    has_spotify: bool
     display_name: Optional[str] = None
 
 
@@ -114,6 +114,25 @@ class OnboardSubmitPayload(BaseModel):
     # Natural language summary
     raw_context: Optional[str] = None
     
+    # NEW: Enhanced preferences from improved onboarding
+    # Energy/tempo preference inferred from preview reactions
+    energy_preference: Optional[Literal["high_energy", "low_energy", "mixed"]] = None
+    tempo_preference: Optional[Literal["fast", "slow", "mixed"]] = None
+    
+    # Listening contexts when user typically listens to music
+    listening_contexts: Optional[List[str]] = Field(default_factory=list)
+    
+    # Era preference - classics vs new releases
+    era_preference: Optional[Literal["new_releases", "classics", "mixed", "no_preference"]] = "mixed"
+    
+    @field_validator('listening_contexts', mode='before')
+    @classmethod
+    def validate_listening_contexts(cls, v):
+        """Convert null to empty list for listening_contexts."""
+        if v is None:
+            return []
+        return v
+    
     # Legacy fields (for backwards compatibility)
     work: Optional[str] = None  # Maps to occupation
     music_preferences: Optional[dict] = None  # Legacy nested object
@@ -169,12 +188,19 @@ async def get_onboard_status(
     Returns onboarded=True only if:
     1. User has completed voice onboarding (onboarded_at is set)
     2. User has a profile
-    3. Mood generation is complete (user has 5 moods)
+    3. At least one mood exists with a generated intro
     
     This prevents the frontend from getting stuck in a polling loop.
     """
     from backend_v2.models.mood import Mood
+    from backend_v2.models.spotify_context import SpotifyUserContext
     from backend_v2.services.mood_generator import get_generation_progress, GenerationStatus
+    
+    # Check for Spotify connection
+    spotify_stmt = select(SpotifyUserContext).where(SpotifyUserContext.user_id == current_user.id)
+    spotify_result = await db.execute(spotify_stmt)
+    spotify_context = spotify_result.scalar_one_or_none()
+    has_spotify = spotify_context is not None
     
     # Check for user profile
     stmt = select(UserProfile).where(UserProfile.user_id == current_user.id)
@@ -184,34 +210,35 @@ async def get_onboard_status(
     # Check if user has completed voice onboarding
     voice_onboarded = current_user.onboarded_at is not None
     
-    # Check if mood generation is complete (user has 5 moods)
+    # Check mood + intro readiness
     mood_stmt = select(Mood).where(Mood.user_id == current_user.id)
     mood_result = await db.execute(mood_stmt)
     moods = mood_result.scalars().all()
     moods_count = len(moods)
-    
+    intro_ready = any(mood.intro_segment_path for mood in moods)
+
     # Check generation progress
     progress = get_generation_progress(current_user.id)
-    generation_complete = moods_count >= 5
+    generation_complete = moods_count >= 1 and intro_ready
     
     # User is fully onboarded only if:
     # 1. Voice onboarding done
     # 2. Profile exists  
-    # 3. Mood generation is complete (user has 5 moods)
+    # 3. Mood generation is complete (at least 1 mood + intro)
     
     fully_onboarded = False
     
     if voice_onboarded and profile:
         if generation_complete:
-            # User has 5 moods - fully onboarded
+            # User has at least one mood + intro - fully onboarded
             fully_onboarded = True
         elif progress:
             # Check generation status
             if progress.status == GenerationStatus.COMPLETE:
-                fully_onboarded = True
+                fully_onboarded = generation_complete
             elif progress.status == GenerationStatus.FAILED:
-                # Generation failed - mark as onboarded anyway (user can use app, moods can be regenerated)
-                fully_onboarded = True
+                # Generation failed - still require at least one mood + intro
+                fully_onboarded = generation_complete
             elif progress.status == GenerationStatus.GENERATING:
                 # Still generating - not fully onboarded yet
                 fully_onboarded = False
@@ -219,22 +246,13 @@ async def get_onboard_status(
                 # PENDING - not started yet or just started
                 fully_onboarded = False
         else:
-            # No progress tracking - check if it's been a while since onboarding
-            if current_user.onboarded_at:
-                onboarded_at = ensure_utc(current_user.onboarded_at)
-                if onboarded_at and utc_now() - onboarded_at > timedelta(minutes=5):
-                    # Been more than 5 minutes, assume generation completed or failed
-                    # If user has any moods, consider them onboarded
-                    fully_onboarded = moods_count > 0
-                else:
-                    # Still within reasonable time window - wait for generation
-                    fully_onboarded = False
-            else:
-                fully_onboarded = False
+            # No progress tracking - require at least one mood + intro
+            fully_onboarded = generation_complete
     
     return OnboardStatusResponse(
         onboarded=fully_onboarded,
         has_profile=profile is not None,
+        has_spotify=has_spotify,
         display_name=profile.display_name if profile else current_user.display_name,
     )
 
@@ -421,6 +439,12 @@ async def submit_onboarding(
     result = await db.execute(stmt)
     profile = result.scalar_one_or_none()
     
+    # Extract new enhanced preference fields
+    listening_contexts = payload.listening_contexts or []
+    energy_preference = payload.energy_preference
+    tempo_preference = payload.tempo_preference
+    era_preference = payload.era_preference or "mixed"
+    
     if profile:
         # Update existing profile
         profile.display_name = payload.display_name or profile.display_name
@@ -434,6 +458,11 @@ async def submit_onboarding(
         profile.explicit_lyrics = explicit_lyrics
         profile.dj_personality = payload.dj_personality or profile.dj_personality
         profile.raw_context = payload.raw_context or profile.raw_context
+        # NEW: Enhanced preferences
+        profile.energy_preference = energy_preference or profile.energy_preference
+        profile.tempo_preference = tempo_preference or profile.tempo_preference
+        profile.listening_contexts = json.dumps(listening_contexts) if listening_contexts else profile.listening_contexts
+        profile.era_preference = era_preference or profile.era_preference
         profile.updated_at = utc_now()
     else:
         # Create new profile
@@ -450,6 +479,11 @@ async def submit_onboarding(
             explicit_lyrics=explicit_lyrics,
             dj_personality=payload.dj_personality or "casual_funny",
             raw_context=payload.raw_context,
+            # NEW: Enhanced preferences
+            energy_preference=energy_preference,
+            tempo_preference=tempo_preference,
+            listening_contexts=json.dumps(listening_contexts) if listening_contexts else None,
+            era_preference=era_preference,
         )
         db.add(profile)
     
@@ -552,6 +586,34 @@ def _build_raw_context(
         }
         parts.append(personality_map.get(payload.dj_personality, ""))
     
+    # NEW: Enhanced preference fields
+    if payload.energy_preference:
+        energy_map = {
+            "high_energy": "prefers high-energy tracks",
+            "low_energy": "prefers chill/low-energy tracks",
+            "mixed": "likes both high and low energy"
+        }
+        parts.append(energy_map.get(payload.energy_preference, ""))
+    
+    if payload.tempo_preference:
+        tempo_map = {
+            "fast": "prefers fast-paced music",
+            "slow": "prefers slower tempo",
+            "mixed": "likes varied tempos"
+        }
+        parts.append(tempo_map.get(payload.tempo_preference, ""))
+    
+    if payload.listening_contexts:
+        parts.append(f"Listens during: {', '.join(payload.listening_contexts[:4])}")
+    
+    if payload.era_preference and payload.era_preference != "mixed":
+        era_map = {
+            "new_releases": "prefers new/recent music",
+            "classics": "prefers classic hits and older music",
+            "no_preference": "no era preference"
+        }
+        parts.append(era_map.get(payload.era_preference, ""))
+    
     return ", ".join(filter(None, parts))
 
 
@@ -566,19 +628,28 @@ async def get_generation_status(
     """Get the status of mood generation for the current user.
     
     Frontend should poll this after onboarding to show progress.
+    Progress is derived from in-memory state when available and DB state otherwise.
     """
     from backend_v2.services.mood_generator import get_generation_progress, GenerationStatus
     
     progress = get_generation_progress(current_user.id)
-    
+
     if not progress:
-        # No generation in progress - check if user already has moods
+        from backend_v2.models.mood import Mood
+        result = await db.execute(select(Mood).where(Mood.user_id == current_user.id))
+        moods = result.scalars().all()
+        moods_created = len(moods)
+        intros_ready = sum(1 for mood in moods if mood.intro_segment_path)
+
+        status = "complete" if intros_ready >= 1 and moods_created >= 1 else "pending"
+        current_step = "Ready to play!" if status == "complete" else "Starting..."
+
         return GenerationStatusResponse(
-            status="complete",
-            moods_created=5,
-            moods_total=5,
-            current_step="Ready to play!",
-            intros_ready=5,
+            status=status,
+            moods_created=moods_created,
+            moods_total=max(moods_created, 5),
+            current_step=current_step,
+            intros_ready=intros_ready,
             error=None,
         )
     

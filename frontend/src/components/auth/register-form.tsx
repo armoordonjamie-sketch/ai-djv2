@@ -65,7 +65,8 @@ export function RegisterForm() {
       const result = await registerUser(data.email, data.password, data.displayName || undefined)
 
       if (result.success) {
-        navigate("/onboarding")
+        // Navigate to Spotify connect page first, then voice onboarding
+        navigate("/connect-spotify")
       } else {
         setServerError(result.error || "Registration failed")
       }

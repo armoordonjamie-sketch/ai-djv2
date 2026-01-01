@@ -11,7 +11,7 @@ and also return tokens in response body for API clients.
 """
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, status, Response
+from fastapi import APIRouter, Depends, HTTPException, status, Response, Form, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -213,7 +213,8 @@ async def login(
 @router.post("/login/form", response_model=TokenResponse, include_in_schema=False)
 async def login_form(
     response: Response,
-    form_data: OAuth2PasswordRequestForm = Depends(),
+    username: str = Form(...),
+    password: str = Form(...),
     db: AsyncSession = Depends(get_async_session),
 ):
     """
@@ -223,11 +224,11 @@ async def login_form(
     """
     # Find user by email (username field)
     result = await db.execute(
-        select(User).where(User.email == form_data.username, User.is_active == True)
+        select(User).where(User.email == username, User.is_active == True)
     )
     user = result.scalar_one_or_none()
     
-    if not user or not verify_password(form_data.password, user.password_hash):
+    if not user or not verify_password(password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password",
@@ -261,6 +262,7 @@ async def login_form(
 
 @router.post("/refresh", response_model=TokenResponse)
 async def refresh_tokens(
+    request: Request,
     response: Response,
     data: TokenRefresh = None,
     db: AsyncSession = Depends(get_async_session),
@@ -275,18 +277,18 @@ async def refresh_tokens(
     1. Request body (API clients)
     2. HttpOnly cookie (browsers)
     """
-    from fastapi import Request
-    
-    # Get refresh token from body or cookie
-    # Note: For cookie, we'd need to inject Request, but the cookie
-    # is already restricted to this path
-    if not data or not data.refresh_token:
+    # Get refresh token from body or cookie (cookie is preferred for browsers)
+    refresh_jwt = None
+    if data and data.refresh_token:
+        refresh_jwt = data.refresh_token
+    else:
+        refresh_jwt = request.cookies.get("refresh_token")
+
+    if not refresh_jwt:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Refresh token required",
         )
-    
-    refresh_jwt = data.refresh_token
     
     try:
         user_id, raw_token = decode_refresh_token(refresh_jwt)

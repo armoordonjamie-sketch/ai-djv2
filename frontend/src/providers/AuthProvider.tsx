@@ -13,6 +13,7 @@ interface AuthContextType {
     isLoading: boolean
     isAuthenticated: boolean
     isOnboarded: boolean
+    hasSpotify: boolean
     login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>
     register: (email: string, password: string, displayName?: string) => Promise<{ success: boolean; error?: string }>
     logout: () => Promise<void>
@@ -35,6 +36,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const [user, setUser] = useState<User | null>(null)
     const [isLoading, setIsLoading] = useState(true)
     const [isOnboarded, setIsOnboarded] = useState(false)
+    const [hasSpotify, setHasSpotify] = useState(false)
 
     // Check auth state on mount by calling GET /me
     useEffect(() => {
@@ -48,22 +50,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 // If 401, try to refresh token
                 if (err instanceof api.JamifyApiError && err.isUnauthorized) {
                     try {
-                        console.log('[Auth] Access token expired, attempting refresh...')
+                        // Check if we have a refresh token cookie before attempting refresh
+                        // (Note: HttpOnly cookies can't be checked from JS, so we try and handle gracefully)
                         await api.refreshToken()
                         // Retry get user
                         const apiUser = await api.getMe()
                         setUser(mapApiUser(apiUser))
                         await loadOnboardingStatus()
-                        console.log('[Auth] Session refreshed successfully')
-                    } catch {
-                        // Refresh failed or other error - truly logged out
-                        setUser(null)
-                        setIsOnboarded(false)
+                    } catch (refreshErr) {
+                        // Refresh failed - this is expected when not logged in
+                        // If it's a 400 "Refresh token required", that's normal for logged-out users
+                        if (refreshErr instanceof api.JamifyApiError && 
+                            refreshErr.status === 400 && 
+                            refreshErr.message.toLowerCase().includes('refresh token')) {
+                            // Expected: no refresh token means user is not logged in
+                            setUser(null)
+                            setIsOnboarded(false)
+                            setHasSpotify(false)
+                        } else {
+                            // Other error during refresh - also means logged out
+                            setUser(null)
+                            setIsOnboarded(false)
+                            setHasSpotify(false)
+                        }
                     }
                 } else {
                     // Not a 401, just failed
                     setUser(null)
                     setIsOnboarded(false)
+                    setHasSpotify(false)
                 }
             } finally {
                 setIsLoading(false)
@@ -73,9 +88,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         async function loadOnboardingStatus() {
             try {
                 const onboardStatus = await api.getOnboardStatus()
-                setIsOnboarded(onboardStatus.has_profile)
+                setIsOnboarded(onboardStatus.onboarded)
+                setHasSpotify(onboardStatus.has_spotify)
             } catch {
                 setIsOnboarded(false)
+                setHasSpotify(false)
             }
         }
 
@@ -88,18 +105,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             setUser(mapApiUser(apiUser))
 
             const onboardStatus = await api.getOnboardStatus()
-            setIsOnboarded(onboardStatus.has_profile)
+            setIsOnboarded(onboardStatus.onboarded)
+            setHasSpotify(onboardStatus.has_spotify)
         } catch {
             setUser(null)
             setIsOnboarded(false)
+            setHasSpotify(false)
         }
     }, [])
 
     const checkOnboarding = useCallback(async (): Promise<boolean> => {
         try {
             const status = await api.getOnboardStatus()
-            setIsOnboarded(status.has_profile)
-            return status.has_profile
+            setIsOnboarded(status.onboarded)
+            setHasSpotify(status.has_spotify)
+            return status.onboarded
         } catch {
             return false
         }
@@ -113,9 +133,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             // Check onboarding after login
             try {
                 const onboardStatus = await api.getOnboardStatus()
-                setIsOnboarded(onboardStatus.has_profile)
+                setIsOnboarded(onboardStatus.onboarded)
+                setHasSpotify(onboardStatus.has_spotify)
             } catch {
                 setIsOnboarded(false)
+                setHasSpotify(false)
             }
 
             return { success: true }
@@ -132,6 +154,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             const response = await api.register(email, password, displayName)
             setUser(mapApiUser(response.user))
             setIsOnboarded(false) // New users need onboarding
+            setHasSpotify(false) // New users haven't connected Spotify yet
 
             return { success: true }
         } catch (err) {
@@ -150,6 +173,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
         setUser(null)
         setIsOnboarded(false)
+        setHasSpotify(false)
     }, [])
 
     return (
@@ -159,6 +183,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 isLoading,
                 isAuthenticated: !!user,
                 isOnboarded,
+                hasSpotify,
                 login,
                 register,
                 logout,

@@ -22,6 +22,7 @@ from backend_v2.models.mood import Mood, MoodProfile
 from backend_v2.models.feedback import FeedbackEvent
 from backend_v2.models.settings import AgentSettings, PromptTemplate
 from backend_v2.models.existing import PlayHistory, Song
+from backend_v2.models.spotify_context import SpotifyUserContext, DJSpeechHistory
 from backend_v2.utils.time import utc_now, ensure_utc
 
 logger = logging.getLogger("ai-dj.preference_bundle")
@@ -52,6 +53,7 @@ class MoodData:
     color: Optional[str] = None
     intro_segment_path: Optional[str] = None
     intro_song_uuid: Optional[str] = None
+    intro_used: bool = False  # Track if pre-generated intro has been played
     # Fix Issue #10: Mood-specific personalization fields for prompts/scoring
     danceability_target: Optional[float] = None
     tempo_min: Optional[int] = None
@@ -116,6 +118,30 @@ class UserProfileData:
     # Natural language summary
     raw_context: Optional[str] = None
     
+    # NEW: Enhanced preferences from improved onboarding
+    energy_preference: Optional[str] = None  # "high_energy" | "low_energy" | "mixed"
+    tempo_preference: Optional[str] = None  # "fast" | "slow" | "mixed"
+    listening_contexts: List[str] = field(default_factory=list)  # ["workout", "focus", "party", etc.]
+    era_preference: str = "mixed"  # "new_releases" | "classics" | "mixed" | "no_preference"
+    
+    # NEW: Spotify-enriched data
+    spotify_connected: bool = False
+    
+    # From Spotify top tracks/artists with ranking
+    top_artists_short_term: List[dict] = field(default_factory=list)  # [{name, rank, genres}]
+    top_artists_medium_term: List[dict] = field(default_factory=list)
+    top_artists_long_term: List[dict] = field(default_factory=list)
+    
+    # Top tracks with play stats for DJ speech
+    top_tracks_with_stats: List[dict] = field(default_factory=list)  
+    # [{title, artist, rank, time_range, isrc}]
+    
+    # AI-enriched preferences
+    spotify_genre_analysis: Optional[dict] = None
+    spotify_mood_analysis: Optional[dict] = None
+    listening_frequency: Optional[str] = None
+    playlist_themes: List[str] = field(default_factory=list)
+    
     def allows_explicit(self) -> bool:
         """Check if user allows explicit content."""
         return self.explicit_lyrics != "avoid"
@@ -127,6 +153,30 @@ class UserProfileData:
     def get_favorite_genres_lower(self) -> List[str]:
         """Get favorite genres lowercased for matching."""
         return [g.lower() for g in self.favorite_genres if g]
+    
+    def prefers_high_energy(self) -> bool:
+        """Check if user prefers high energy tracks."""
+        return self.energy_preference == "high_energy"
+    
+    def prefers_low_energy(self) -> bool:
+        """Check if user prefers low energy/chill tracks."""
+        return self.energy_preference == "low_energy"
+    
+    def prefers_fast_tempo(self) -> bool:
+        """Check if user prefers fast-paced music."""
+        return self.tempo_preference == "fast"
+    
+    def prefers_slow_tempo(self) -> bool:
+        """Check if user prefers slower music."""
+        return self.tempo_preference == "slow"
+    
+    def prefers_new_releases(self) -> bool:
+        """Check if user prefers new/recent music."""
+        return self.era_preference == "new_releases"
+    
+    def prefers_classics(self) -> bool:
+        """Check if user prefers classic hits."""
+        return self.era_preference == "classics"
 
 
 @dataclass
@@ -146,6 +196,14 @@ class HistoryItem:
 
 
 @dataclass
+class DJHistoryData:
+    """Recent DJ speech and interactions for continuity."""
+    recent_speeches: List[str] = field(default_factory=list)  # Last 5-10 speeches
+    topics_mentioned: List[str] = field(default_factory=list)  # Artists/tracks mentioned
+    last_mention_time: Dict[str, datetime] = field(default_factory=dict)  # Avoid repetition
+
+
+@dataclass
 class PreferenceBundle:
     """Complete user preference bundle for AI agents.
     
@@ -162,6 +220,7 @@ class PreferenceBundle:
     profile: UserProfileData  # NEW: Structured onboarding profile
     agent_settings: Dict[str, Dict[str, Any]]  # {agent_name: settings_dict}
     prompt_templates: Dict[str, str]  # {template_name: template_text}
+    dj_history: DJHistoryData  # NEW: DJ speech history for continuity
     
     # Computed at build time
     built_at: datetime = field(default_factory=utc_now)
@@ -217,6 +276,28 @@ class PreferenceBundle:
     def get_dj_personality(self) -> str:
         """Get DJ personality style from profile."""
         return self.profile.dj_personality or "casual_funny"
+    
+    # === NEW: Enhanced preference helpers ===
+    
+    def get_favorite_songs(self) -> List[str]:
+        """Get favorite songs from profile."""
+        return self.profile.favorite_songs
+    
+    def get_energy_preference(self) -> Optional[str]:
+        """Get energy preference (high_energy, low_energy, mixed)."""
+        return self.profile.energy_preference
+    
+    def get_tempo_preference(self) -> Optional[str]:
+        """Get tempo preference (fast, slow, mixed)."""
+        return self.profile.tempo_preference
+    
+    def get_listening_contexts(self) -> List[str]:
+        """Get listening contexts (workout, focus, party, etc.)."""
+        return self.profile.listening_contexts
+    
+    def get_era_preference(self) -> str:
+        """Get era preference (new_releases, classics, mixed)."""
+        return self.profile.era_preference
 
 
 # =============================================================================
@@ -473,6 +554,7 @@ async def build_preference_bundle(
         color=mood_row.color,
         intro_segment_path=mood_row.intro_segment_path,
         intro_song_uuid=mood_row.intro_song_uuid,
+        intro_used=getattr(mood_row, 'intro_used', False) or False,
         # Fix Issue #10: Populate mood-specific personalization fields
         danceability_target=mood_row.danceability_target if hasattr(mood_row, 'danceability_target') else None,
         tempo_min=mood_row.tempo_min if hasattr(mood_row, 'tempo_min') else None,
@@ -518,7 +600,21 @@ async def build_preference_bundle(
     
     recent_likes = []
     recent_dislikes = []
+    seen_feedback = set()
     for fb in feedback_rows:
+        key = None
+        if fb.song_uuid:
+            key = f"uuid:{fb.song_uuid}"
+        elif fb.track_artist or fb.track_title:
+            key = f"title:{(fb.track_artist or '').lower()}|{(fb.track_title or '').lower()}"
+        if key and key in seen_feedback:
+            continue
+        if key:
+            seen_feedback.add(key)
+
+        if fb.value not in ("like", "dislike"):
+            continue
+
         item = FeedbackItem(
             song_uuid=fb.song_uuid,
             title=fb.track_title,
@@ -635,6 +731,11 @@ async def build_preference_bundle(
             explicit_lyrics=profile_row.explicit_lyrics or "ok",
             dj_personality=profile_row.dj_personality or "casual_funny",
             raw_context=profile_row.raw_context,
+            # NEW: Enhanced preference fields
+            energy_preference=getattr(profile_row, 'energy_preference', None),
+            tempo_preference=getattr(profile_row, 'tempo_preference', None),
+            listening_contexts=parse_json_list(getattr(profile_row, 'listening_contexts', None)),
+            era_preference=getattr(profile_row, 'era_preference', None) or "mixed",
         )
     else:
         # Create empty profile with defaults
@@ -650,6 +751,100 @@ async def build_preference_bundle(
             profile.explicit_lyrics = pj.get("explicit_lyrics", "ok")
             profile.dj_personality = pj.get("dj_personality", "casual_funny")
     
+    # --- Load Spotify Context (if connected) ---
+    stmt = select(SpotifyUserContext).where(SpotifyUserContext.user_id == user_id)
+    result = await db.execute(stmt)
+    spotify_context = result.scalar_one_or_none()
+    
+    if spotify_context:
+        profile.spotify_connected = True
+        
+        # Parse top artists
+        try:
+            top_artists_data = json.loads(spotify_context.top_artists_json) if spotify_context.top_artists_json else {}
+            profile.top_artists_short_term = top_artists_data.get("short_term", [])
+            profile.top_artists_medium_term = top_artists_data.get("medium_term", [])
+            profile.top_artists_long_term = top_artists_data.get("long_term", [])
+        except json.JSONDecodeError:
+            logger.warning(f"Failed to parse Spotify top artists for user {user_id}")
+        
+        # Parse favorite tracks with stats
+        try:
+            profile.top_tracks_with_stats = json.loads(spotify_context.favorite_tracks_with_stats_json) if spotify_context.favorite_tracks_with_stats_json else []
+        except json.JSONDecodeError:
+            logger.warning(f"Failed to parse Spotify favorite tracks stats for user {user_id}")
+        
+        # Parse AI-enriched data
+        try:
+            profile.spotify_genre_analysis = json.loads(spotify_context.genres_analysis_json) if spotify_context.genres_analysis_json else None
+        except json.JSONDecodeError:
+            pass
+        
+        try:
+            profile.spotify_mood_analysis = json.loads(spotify_context.mood_analysis_json) if spotify_context.mood_analysis_json else None
+        except json.JSONDecodeError:
+            pass
+        
+        try:
+            listening_habits = json.loads(spotify_context.listening_habits_json) if spotify_context.listening_habits_json else {}
+            profile.listening_frequency = listening_habits.get("listening_frequency")
+        except json.JSONDecodeError:
+            pass
+        
+        try:
+            music_prefs = json.loads(spotify_context.music_preferences_json) if spotify_context.music_preferences_json else {}
+            playlist_analysis = json.loads(spotify_context.playlists_json) if spotify_context.playlists_json else {}
+            # Extract playlist themes if available
+            if isinstance(playlist_analysis, dict):
+                profile.playlist_themes = playlist_analysis.get("playlist_themes", [])
+        except json.JSONDecodeError:
+            pass
+    
+    # --- Load DJ Speech History ---
+    stmt = (
+        select(DJSpeechHistory)
+        .where(DJSpeechHistory.user_id == user_id)
+        .order_by(desc(DJSpeechHistory.created_at))
+        .limit(10)
+    )
+    result = await db.execute(stmt)
+    speech_history_rows = result.scalars().all()
+    
+    recent_speeches = [speech.speech_text for speech in speech_history_rows]
+    
+    # Extract mentioned topics from speeches
+    topics_mentioned = []
+    last_mention_time = {}
+    for speech in speech_history_rows:
+        # Parse mentioned artists and tracks
+        try:
+            if speech.mentioned_artists:
+                artists = json.loads(speech.mentioned_artists)
+                for artist in artists:
+                    if artist not in topics_mentioned:
+                        topics_mentioned.append(artist)
+                        if artist not in last_mention_time:
+                            last_mention_time[artist] = speech.created_at
+        except json.JSONDecodeError:
+            pass
+        
+        try:
+            if speech.mentioned_tracks:
+                tracks = json.loads(speech.mentioned_tracks)
+                for track in tracks:
+                    if track not in topics_mentioned:
+                        topics_mentioned.append(track)
+                        if track not in last_mention_time:
+                            last_mention_time[track] = speech.created_at
+        except json.JSONDecodeError:
+            pass
+    
+    dj_history = DJHistoryData(
+        recent_speeches=recent_speeches,
+        topics_mentioned=topics_mentioned,
+        last_mention_time=last_mention_time,
+    )
+    
     # --- Build Bundle ---
     bundle = PreferenceBundle(
         user_id=user_id,
@@ -662,6 +857,7 @@ async def build_preference_bundle(
         profile=profile,
         agent_settings=agent_settings,
         prompt_templates=prompt_templates,
+        dj_history=dj_history,
     )
     
     # Cache for future requests
@@ -885,6 +1081,36 @@ def score_candidate(
     # Liked songs get a boost
     if song_uuid in bundle.get_liked_song_uuids():
         score += 0.3
+    
+    # Favorite songs get a boost (from user profile)
+    favorite_songs = bundle.get_favorite_songs()
+    if favorite_songs:
+        song_title = song.get("title", "").lower()
+        for fav_song in favorite_songs:
+            # Handle format: "Song Title by Artist" or just "Song Title"
+            fav_title = fav_song.lower().split(" by ")[0].strip()
+            if fav_title and fav_title in song_title:
+                score += 0.4  # Strong boost for favorite songs
+                break
+    
+    # Favorite artists get a boost
+    favorite_artists = bundle.get_favorite_artists()
+    if favorite_artists and artist:
+        for fav_artist in favorite_artists:
+            if fav_artist.lower() in artist or artist in fav_artist.lower():
+                score += 0.2  # Boost for favorite artists
+                break
+    
+    # Favorite genres get a boost
+    favorite_genres = bundle.get_favorite_genres()
+    if favorite_genres:
+        song_genres = [g.lower() for g in (song.get("genres") or [])]
+        song_tags = [t.lower() for t in (song.get("tags") or [])]
+        all_song_tags = song_genres + song_tags
+        for fav_genre in favorite_genres:
+            if fav_genre.lower() in all_song_tags or any(fav_genre.lower() in tag for tag in all_song_tags):
+                score += 0.15  # Boost for favorite genres
+                break
     
     # === MOOD MATCHING (if features available) ===
     

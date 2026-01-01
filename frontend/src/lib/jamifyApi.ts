@@ -88,6 +88,57 @@ interface JamifyFetchOptions {
     method?: string
     body?: unknown
     headers?: HeadersInit
+    skipRefresh?: boolean  // Used to prevent infinite refresh loops
+    timeout?: number       // Custom timeout in ms (default: 15000)
+}
+
+// Track if a refresh is in progress to prevent multiple simultaneous refreshes
+let isRefreshing = false
+let refreshPromise: Promise<boolean> | null = null
+
+/**
+ * Attempt to refresh the access token using the refresh_token cookie.
+ * Returns true if refresh succeeded, false otherwise.
+ */
+async function refreshAccessToken(): Promise<boolean> {
+    // If already refreshing, wait for that to complete
+    if (isRefreshing && refreshPromise) {
+        return refreshPromise
+    }
+
+    isRefreshing = true
+    refreshPromise = (async () => {
+        try {
+            console.log('[API] Attempting token refresh...')
+            const url = new URL(`${API_V1}/auth/refresh`, window.location.origin)
+            url.searchParams.append('_t', Date.now().toString())
+
+            const response = await fetch(url.toString(), {
+                method: 'POST',
+                credentials: 'include',
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...csrfHeadersIfNeeded('POST'),
+                },
+            })
+
+            if (response.ok) {
+                console.log('[API] Token refresh succeeded')
+                return true
+            } else {
+                console.warn('[API] Token refresh failed:', response.status)
+                return false
+            }
+        } catch (err) {
+            console.error('[API] Token refresh error:', err)
+            return false
+        } finally {
+            isRefreshing = false
+            refreshPromise = null
+        }
+    })()
+
+    return refreshPromise
 }
 
 /**
@@ -96,9 +147,10 @@ interface JamifyFetchOptions {
  * - JSON body serialization
  * - CSRF header for mutating requests
  * - Rich error parsing
+ * - Automatic token refresh on 401
  */
 async function jamifyFetch<T>(path: string, options: JamifyFetchOptions = {}): Promise<T> {
-    const { method = 'GET', body, headers = {} } = options
+    const { method = 'GET', body, headers = {}, timeout = 15000 } = options
 
     const finalHeaders: HeadersInit = {
         ...csrfHeadersIfNeeded(method),
@@ -122,9 +174,9 @@ async function jamifyFetch<T>(path: string, options: JamifyFetchOptions = {}): P
 
     console.log(`[API] ${requestId} -> ${method} ${url.pathname}`)
 
-    // Robust 15s timeout
+    // Configurable timeout (default 15s, use longer for AI-heavy operations)
     const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), 15000)
+    const timeoutId = setTimeout(() => controller.abort(), timeout)
 
     try {
         const response = await fetch(url.toString(), {
@@ -158,6 +210,7 @@ async function jamifyFetch<T>(path: string, options: JamifyFetchOptions = {}): P
             data = null
         }
 
+
         if (!response.ok) {
             const detail = data as { detail?: string | { code?: string; message?: string } } | null
             let message = `API Error: ${response.status}`
@@ -183,7 +236,39 @@ async function jamifyFetch<T>(path: string, options: JamifyFetchOptions = {}): P
         return data as T
     } catch (err) {
         clearTimeout(timeoutId)
-        console.error(`[API] ${requestId} Error:`, err)
+
+        // Handle 401 errors with automatic token refresh
+        if (err instanceof JamifyApiError && err.status === 401 && !options.skipRefresh) {
+            const isAuthEndpoint = path.startsWith('/auth/')
+
+            // Don't try to refresh for auth endpoints (would cause infinite loop)
+            if (!isAuthEndpoint) {
+                console.log(`[API] ${requestId} Got 401, attempting token refresh...`)
+                const refreshed = await refreshAccessToken()
+
+                if (refreshed) {
+                    console.log(`[API] ${requestId} Token refreshed, retrying request...`)
+                    // Retry the original request with skipRefresh=true to prevent infinite loop
+                    return jamifyFetch<T>(path, { ...options, skipRefresh: true })
+                } else {
+                    console.warn(`[API] ${requestId} Token refresh failed, user needs to re-login`)
+                }
+            }
+        }
+
+        // Use debug logging for expected auth errors (401/400 on auth endpoints)
+        // These are handled gracefully by the AuthProvider
+        if (err instanceof JamifyApiError) {
+            const isAuthEndpoint = path.startsWith('/auth/')
+            const isExpectedAuthError = isAuthEndpoint && (err.status === 401 || err.status === 400)
+            if (isExpectedAuthError) {
+                console.debug(`[API] ${requestId} Expected auth error:`, err.message)
+            } else {
+                console.error(`[API] ${requestId} Error:`, err)
+            }
+        } else {
+            console.error(`[API] ${requestId} Error:`, err)
+        }
         throw err
     }
 }
@@ -208,6 +293,7 @@ export interface AuthResponse {
 export interface OnboardStatus {
     onboarded: boolean
     has_profile: boolean
+    has_spotify: boolean
     display_name: string | null
 }
 
@@ -266,13 +352,17 @@ export interface ContextCreateRequest {
 export interface StreamStartRequest {
     mood_id?: string
     context_name?: string
+    resume?: boolean
+    position_sec?: number  // For per-mood resume with custom position
 }
 
 export interface StreamStartResponse {
     session_id: string
     stream_url: string
     ws_url: string
+    mood_id?: string  // The active mood ID for this session
     now_playing: NowPlaying | null
+    position_sec?: number  // Resume position if resuming
 }
 
 export interface StreamStatusResponse {
@@ -290,6 +380,21 @@ export interface NowPlaying {
     title: string
     artist: string
     artwork_url?: string
+}
+
+// Session persistence types
+export interface TrackInfo {
+    title: string
+    artist: string
+    artwork_url?: string
+}
+
+export interface ResumableSession {
+    resumable: boolean
+    session_id?: string
+    position_sec?: number
+    mood_name?: string
+    track_info?: TrackInfo
 }
 
 export interface FeedbackRequest {
@@ -527,6 +632,7 @@ export interface PlayPreviewResponse {
     track_title?: string
     artist_name?: string
     preview_url?: string
+    artwork_url?: string  // Album artwork from Deezer
     duration_seconds?: number
     message?: string
     error?: string
@@ -536,5 +642,108 @@ export async function playPreview(artist_name: string, track_title: string): Pro
     return jamifyFetch<PlayPreviewResponse>('/deezer/play-preview', {
         method: 'POST',
         body: { artist_name, track_title }
+    })
+}
+
+// ============ Session Persistence API ============
+
+export async function checkResumableSession(): Promise<ResumableSession> {
+    return jamifyFetch<ResumableSession>('/session/resumable')
+}
+
+export async function sendHeartbeat(position_sec: number): Promise<{ success: boolean }> {
+    return jamifyFetch<{ success: boolean }>('/session/heartbeat', {
+        method: 'POST',
+        body: { position_sec }
+    })
+}
+
+// ============ History API ============
+
+export interface TrainingLogEntry {
+    id: string
+    timestamp: string
+    message: string
+    payload: {
+        type?: string
+        source?: string
+        track?: string
+        added_artists?: string[]
+        demoted_artist?: string
+        reasoning?: string
+        insights?: string
+        mood_name?: string
+    }
+}
+
+export async function getTrainingHistory(limit: number = 50): Promise<TrainingLogEntry[]> {
+    return jamifyFetch<TrainingLogEntry[]>(`/history/training?limit=${limit}`)
+}
+
+export interface PlayHistoryItem {
+    id: number
+    song_uuid: string | null
+    track_title: string
+    track_artist: string
+    started_at: string
+    ended_at: string | null
+    skipped: boolean
+    mood_id: string | null
+}
+
+export async function getPlayHistory(limit: number = 50): Promise<PlayHistoryItem[]> {
+    return jamifyFetch<PlayHistoryItem[]>(`/history/plays?limit=${limit}`)
+}
+
+// ============ Spotify Integration API ============
+
+export interface SpotifyAuthResponse {
+    auth_url: string
+    session_id: string
+}
+
+export interface SpotifyStatusResponse {
+    connected: boolean
+    spotify_id?: string
+    last_synced_at?: string
+}
+
+export interface SpotifyFetchResponse {
+    success: boolean
+    message: string
+    synced_at: string
+}
+
+/**
+ * Get Spotify authorization URL for OAuth flow
+ */
+export async function getSpotifyAuthUrl(): Promise<SpotifyAuthResponse> {
+    return jamifyFetch<SpotifyAuthResponse>('/spotify/authorize')
+}
+
+/**
+ * Check if user has connected Spotify
+ */
+export async function getSpotifyStatus(): Promise<SpotifyStatusResponse> {
+    return jamifyFetch<SpotifyStatusResponse>('/spotify/status')
+}
+
+/**
+ * Fetch and enrich Spotify data
+ * Uses extended timeout (60s) due to AI enrichment processing
+ */
+export async function fetchSpotifyData(): Promise<SpotifyFetchResponse> {
+    return jamifyFetch<SpotifyFetchResponse>('/spotify/fetch', {
+        method: 'POST',
+        timeout: 60000  // 60 seconds - AI enrichment can take 10-20+ seconds
+    })
+}
+
+/**
+ * Disconnect Spotify and remove all data
+ */
+export async function disconnectSpotify(): Promise<{ success: boolean; message: string }> {
+    return jamifyFetch<{ success: boolean; message: string }>('/spotify/disconnect', {
+        method: 'POST'
     })
 }

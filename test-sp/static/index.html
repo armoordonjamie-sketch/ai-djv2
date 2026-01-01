@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Spotify Onboarding Test</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🎵 Spotify Onboarding Test</h1>
+            <p>Connect your Spotify account to enrich onboarding data</p>
+        </header>
+
+        <main>
+            <!-- Connection Section -->
+            <section id="connect-section" class="card">
+                <h2>Connect Spotify</h2>
+                
+                <!-- OAuth Form -->
+                <div id="oauth-form" class="auth-form">
+                    <p>Click the button below to authorize with Spotify using OAuth 2.0 with PKCE. This is the secure, official method for authenticating with Spotify.</p>
+                    <button id="open-oauth-btn" class="btn btn-primary">Connect with Spotify</button>
+                    <div id="oauth-status" class="status-message" style="display: none;"></div>
+                </div>
+            </section>
+
+            <!-- Data Fetching Section -->
+            <section id="fetch-section" class="card" style="display: none;">
+                <h2>Fetch Spotify Data</h2>
+                <p>Click the button below to fetch your playlists, top tracks, and artists.</p>
+                <button id="fetch-btn" class="btn btn-primary">Fetch Spotify Data</button>
+                <div id="fetch-status" class="status-message"></div>
+                <div id="fetch-progress" class="progress-bar" style="display: none;">
+                    <div class="progress-fill"></div>
+                </div>
+            </section>
+
+            <!-- Results Section -->
+            <section id="results-section" class="card" style="display: none;">
+                <h2>Results</h2>
+                <div id="results-content"></div>
+            </section>
+        </main>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
+

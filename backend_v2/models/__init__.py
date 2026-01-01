@@ -18,7 +18,10 @@ from backend_v2.models.existing import (
     PlayHistory,
     Segment,
     LLMTrace,
+    ToolUsageLog,
 )
+from backend_v2.models.track_intent import TrackIntent, AcquisitionJob
+from backend_v2.models.training_metrics import TrainingMetrics
 
 __all__ = [
     # User & Auth
@@ -41,5 +44,9 @@ __all__ = [
     "PlayHistory",
     "Segment",
     "LLMTrace",
+    "ToolUsageLog",
+    # Track Intent & Acquisition
+    "TrackIntent",
+    "AcquisitionJob",
+    "TrainingMetrics",
 ]
-

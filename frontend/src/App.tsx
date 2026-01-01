@@ -1,6 +1,7 @@
 import { Routes, Route, useLocation } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
 import { ThemeProvider } from '@/components/theme-provider'
+import { IOSPWAProvider } from '@/providers/IOSPWAProvider'
 import { AuthProvider } from '@/providers/AuthProvider'
 import { PlayerProvider } from '@/providers/PlayerProvider'
 import { AppShell } from '@/components/AppShell'
@@ -10,6 +11,8 @@ import { durations, easings, prefersReducedMotion } from '@/lib/motion'
 import LandingPage from './pages/LandingPage'
 import LoginPage from './pages/LoginPage'
 import RegisterPage from './pages/RegisterPage'
+import { SpotifyConnectPage } from './pages/SpotifyConnectPage'
+import { SpotifyConnectedPage } from './pages/SpotifyConnectedPage'
 import VoiceOnboardingPage from './pages/VoiceOnboardingPage'
 import MoodCreationPage from './pages/MoodCreationPage'
 import PlayerPage from './pages/PlayerPage'
@@ -23,7 +26,7 @@ import NotFoundPage from './pages/NotFoundPage'
 // Page transition wrapper
 function PageTransition({ children }: { children: React.ReactNode }) {
   const reducedMotion = prefersReducedMotion()
-  
+
   if (reducedMotion) {
     return <>{children}</>
   }
@@ -45,7 +48,7 @@ function PageTransition({ children }: { children: React.ReactNode }) {
 
 function AppContent() {
   const location = useLocation()
-  
+
   // Only animate auth pages (/, /login, /register)
   const isAuthPage = ['/', '/login', '/register'].includes(location.pathname)
 
@@ -88,6 +91,19 @@ function AppContent() {
             <Route path="/privacy" element={<PrivacyPage />} />
             <Route path="/terms" element={<TermsPage />} />
 
+            {/* Spotify OAuth success - shown in popup window */}
+            <Route path="/spotify-connected" element={<SpotifyConnectedPage />} />
+
+            {/* Spotify connect (optional, before onboarding) */}
+            <Route
+              path="/connect-spotify"
+              element={
+                <ProtectedRoute>
+                  <SpotifyConnectPage />
+                </ProtectedRoute>
+              }
+            />
+
             {/* Voice onboarding (protected) */}
             <Route
               path="/onboarding"
@@ -98,11 +114,11 @@ function AppContent() {
               }
             />
 
-            {/* Mood creation animation (protected) */}
+            {/* Mood creation animation (protected, but no onboarding check since this IS the transition from onboarding) */}
             <Route
               path="/creating-moods"
               element={
-                <ProtectedRoute requireOnboarding>
+                <ProtectedRoute>
                   <MoodCreationPage />
                 </ProtectedRoute>
               }
@@ -135,11 +151,13 @@ function AppContent() {
 
 function App() {
   return (
-    <ThemeProvider defaultTheme="dark" attribute="class">
-      <AuthProvider>
-        <AppContent />
-      </AuthProvider>
-    </ThemeProvider>
+    <IOSPWAProvider>
+      <ThemeProvider defaultTheme="dark" attribute="class">
+        <AuthProvider>
+          <AppContent />
+        </AuthProvider>
+      </ThemeProvider>
+    </IOSPWAProvider>
   )
 }
 

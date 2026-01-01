@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useCallback, useRef, useEffect, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Howl } from 'howler'
+import { Howl, Howler } from 'howler'
 import { useMediaSession } from '@/hooks/useMediaSession'
 import * as api from '@/lib/jamifyApi'
 import type { StatusEvent } from '@/lib/types'
@@ -33,6 +33,8 @@ interface PlayerState {
     djCaption: string
     // Status event state
     currentStatus: StatusEvent | null
+    // Status history for AIActivityFeed (last 10 events)
+    statusHistory: StatusEvent[]
 }
 
 interface PlayerContextType extends PlayerState {
@@ -44,15 +46,26 @@ interface PlayerContextType extends PlayerState {
     setVolume: (volume: number) => void
     toggleMute: () => void
     seek: (time: number) => void
-    setActiveMood: (moodId: string) => Promise<void>
+    setActiveMood: (moodId: string, moodName?: string, moodColor?: string) => Promise<void>
     submitFeedback: (type: 'like' | 'dislike') => Promise<void>
-    startStream: (moodId?: string) => Promise<void>
+    startStream: (moodId?: string, resume?: boolean) => Promise<void>
     stopStream: () => Promise<void>
     // iOS/PWA Status
     hasUserInteracted: boolean
     setHasUserInteracted: (value: boolean) => void
     wasPausedByBackground: boolean
     isIOSPWA: boolean
+    // Mood switch dialog
+    moodSwitchDialog: {
+        open: boolean
+        moodId: string | null
+        moodName: string
+        moodColor: string
+        savedPosition: number
+        savedTrack: { title: string; artist: string; artworkUrl?: string } | null
+    }
+    confirmMoodSwitch: (resume: boolean) => void
+    cancelMoodSwitch: () => void
 }
 
 const PlayerContext = createContext<PlayerContextType | null>(null)
@@ -79,8 +92,11 @@ class WSManager {
     }
 
     connect(url: string) {
-        if (this.ws?.readyState === WebSocket.OPEN) {
-            this.disconnect()
+        // Close any existing connection (including ones still connecting)
+        if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
+            console.log('[WS] Closing existing connection before reconnecting')
+            this.ws.close()
+            this.ws = null
         }
 
         this.url = url
@@ -219,6 +235,10 @@ interface MoodSession {
     sessionId: string
     position: number
     timestamp: number
+    // Track info for resume dialog
+    trackTitle?: string
+    trackArtist?: string
+    trackArtwork?: string
 }
 
 const STORAGE_KEY = 'jamify_mood_sessions'
@@ -228,10 +248,10 @@ function loadMoodSessions(): Map<string, MoodSession> {
     try {
         const stored = localStorage.getItem(STORAGE_KEY)
         if (!stored) return new Map()
-        
+
         const sessions: MoodSession[] = JSON.parse(stored)
         const now = Date.now()
-        
+
         // Filter out expired sessions
         const validSessions = sessions.filter(s => (now - s.timestamp) < SESSION_TTL)
         return new Map(validSessions.map(s => [s.moodId, s]))
@@ -254,13 +274,20 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     const soundRef = useRef<Howl | null>(null)
     const wsManagerRef = useRef<WSManager | null>(null)
     const positionIntervalRef = useRef<NodeJS.Timeout | null>(null)
-    const [hasUserInteracted, setHasUserInteracted] = useState(false)
+    const [hasUserInteracted, setHasUserInteractedState] = useState(false)
+    const hasUserInteractedRef = useRef(false) // Ref for synchronous access in callbacks
+
+    // Wrapper to update both state and ref
+    const setHasUserInteracted = useCallback((value: boolean) => {
+        hasUserInteractedRef.current = value
+        setHasUserInteractedState(value)
+    }, [])
 
     // Background playback state
     const [wasPausedByBackground, setWasPausedByBackground] = useState(false)
     const [isIOSPWA, setIsIOSPWA] = useState(false)
     const wasPlayingRef = useRef(false) // Track if we were playing before backgrounding
-    
+
     // Session tracking for mood resumption
     const moodSessionsRef = useRef<Map<string, MoodSession>>(loadMoodSessions())
 
@@ -282,6 +309,24 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         wsConnected: false,
         djCaption: '',
         currentStatus: null,
+        statusHistory: [],
+    })
+
+    // Mood switch dialog state
+    const [moodSwitchDialog, setMoodSwitchDialog] = useState<{
+        open: boolean
+        moodId: string | null
+        moodName: string
+        moodColor: string
+        savedPosition: number
+        savedTrack: { title: string; artist: string; artworkUrl?: string } | null
+    }>({
+        open: false,
+        moodId: null,
+        moodName: '',
+        moodColor: '#888',
+        savedPosition: 0,
+        savedTrack: null,
     })
 
     // Detect iOS PWA
@@ -292,7 +337,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         setIsIOSPWA(isIOS && (isStandalone || isSafari))
     }, [])
 
-    // Handle visibility changes for background pause detection
+    // Handle visibility changes for background pause detection and iOS resume
     useEffect(() => {
         const handleVisibilityChange = () => {
             const isHidden = document.visibilityState === 'hidden'
@@ -301,12 +346,32 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
                 // Going to background
                 if (state.isPlaying) {
                     wasPlayingRef.current = true
+                    console.log('[Player] Going to background, was playing:', true)
                 }
             } else {
                 // Coming to foreground
+                console.log('[Player] Coming to foreground, wasPlaying:', wasPlayingRef.current, 'isPlaying:', state.isPlaying)
+
                 // If we were playing but now we are paused, and we are on iOS PWA, it's a background pause
                 if (wasPlayingRef.current && !state.isPlaying && isIOSPWA) {
                     setWasPausedByBackground(true)
+
+                    // iOS PWA: Attempt to automatically resume playback
+                    // This requires that the user has already interacted with the page
+                    if (hasUserInteractedRef.current && soundRef.current) {
+                        console.log('[Player] iOS PWA - attempting to resume playback after background')
+                        // Small delay to let iOS settle
+                        setTimeout(() => {
+                            if (soundRef.current && !soundRef.current.playing()) {
+                                try {
+                                    soundRef.current.play()
+                                    console.log('[Player] iOS PWA - resume attempt made')
+                                } catch (err) {
+                                    console.warn('[Player] iOS PWA - resume failed:', err)
+                                }
+                            }
+                        }, 100)
+                    }
                 }
 
                 // Reset flag if we weren't paused by background or we resolved it
@@ -325,6 +390,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         switch (type) {
             case 'now_playing': {
                 const np = data as api.NowPlaying
+                console.log('[WS] Now playing:', np.title, 'by', np.artist)
                 setState(s => ({
                     ...s,
                     currentTrack: {
@@ -350,9 +416,20 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
                 break
             }
             case 'status': {
-                // Structured StatusEvent - update currentStatus for UI display
+                // Structured StatusEvent - update currentStatus and maintain history
                 const statusEvent = data as StatusEvent
-                setState(s => ({ ...s, currentStatus: statusEvent }))
+                setState(s => {
+                    // Deduplicate by ID - only add if not already in history
+                    const alreadyExists = s.statusHistory.some(e => e.id === statusEvent.id)
+                    const newHistory = alreadyExists
+                        ? s.statusHistory
+                        : [statusEvent, ...s.statusHistory].slice(0, 10)
+                    return {
+                        ...s,
+                        currentStatus: statusEvent,
+                        statusHistory: newHistory,
+                    }
+                })
                 console.log('[WS] Status:', statusEvent.user_message, statusEvent.step)
                 break
             }
@@ -388,7 +465,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
                 if (sound && sound.playing()) {
                     const position = sound.seek()
                     setState(s => ({ ...s, position }))
-                    
+
                     // Save position to session storage for resumption
                     if (state.activeMoodId && state.sessionId) {
                         const sessions = moodSessionsRef.current
@@ -414,6 +491,27 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         }
     }, [state.isPlaying, state.activeMoodId, state.sessionId])
 
+    // Send heartbeat to backend every 10 seconds
+    useEffect(() => {
+        if (!state.isPlaying || !state.sessionId) return
+
+        const heartbeatInterval = setInterval(async () => {
+            const sound = soundRef.current
+            if (sound && sound.playing()) {
+                const position = sound.seek()
+                if (typeof position === 'number') {
+                    try {
+                        await api.sendHeartbeat(position)
+                    } catch (err) {
+                        console.warn('[Player] Heartbeat failed:', err)
+                    }
+                }
+            }
+        }, 10000) // Every 10 seconds
+
+        return () => clearInterval(heartbeatInterval)
+    }, [state.isPlaying, state.sessionId])
+
     // Media Session integration
     const mediaSession = useMediaSession({
         handlers: {
@@ -438,16 +536,35 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     }, [state.currentTrack, state.isPlaying, mediaSession])
 
     const play = useCallback(async () => {
-        if (!soundRef.current) return
+        console.log('[Player] play() called, soundRef exists:', !!soundRef.current, 'isIOSPWA:', isIOSPWA)
+        if (!soundRef.current) {
+            console.warn('[Player] Cannot play - no sound instance')
+            return
+        }
         try {
             setHasUserInteracted(true)
             setWasPausedByBackground(false)
+
+            // iOS: Try to unlock Howler's audio context first
+            // @ts-ignore - Howler global context access
+            const ctx = Howler.ctx
+            if (ctx && ctx.state === 'suspended') {
+                console.log('[Player] Audio context suspended, attempting resume...')
+                try {
+                    await ctx.resume()
+                    console.log('[Player] Audio context resumed successfully')
+                } catch (resumeErr) {
+                    console.warn('[Player] Audio context resume failed:', resumeErr)
+                }
+            }
+
+            console.log('[Player] Calling sound.play()')
             soundRef.current.play()
         } catch (err) {
             console.error('[Player] Play failed:', err)
             setState(s => ({ ...s, error: 'Playback failed' }))
         }
-    }, [])
+    }, [isIOSPWA])
 
     const pause = useCallback(() => {
         soundRef.current?.pause()
@@ -495,11 +612,32 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         }
     }, [])
 
-    const startStream = useCallback(async (moodId?: string) => {
-        setState(s => ({ ...s, isLoading: true, error: null, activeMoodId: moodId || s.activeMoodId }))
+    const startStream = useCallback(async (moodId?: string, resume = false) => {
+        // When starting fresh (not resuming), clear the current track to avoid showing stale data
+        if (!resume) {
+            setState(s => ({
+                ...s,
+                isLoading: true,
+                error: null,
+                activeMoodId: moodId || s.activeMoodId,
+                currentTrack: null, // Clear old track when starting fresh
+            }))
+        } else {
+            setState(s => ({ ...s, isLoading: true, error: null, activeMoodId: moodId || s.activeMoodId }))
+        }
 
         try {
-            const result = await api.startStream({ mood_id: moodId })
+            // Get saved position if resuming a mood
+            let position_sec: number | undefined
+            if (resume && moodId) {
+                const savedSession = moodSessionsRef.current.get(moodId)
+                if (savedSession && savedSession.position > 0) {
+                    position_sec = savedSession.position
+                    console.log(`[Player] Resuming mood ${moodId} at position ${position_sec}s`)
+                }
+            }
+
+            const result = await api.startStream({ mood_id: moodId, resume, position_sec })
 
             // Determine stream URL
             const streamUrl = result.stream_url?.startsWith('/')
@@ -520,15 +658,44 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
             }
 
             console.log('[Player] Creating new Howl for:', streamUrl)
+
+            // Track if we've already handled initial load (HTML5 streaming can fire onload multiple times)
+            let initialLoadHandled = false
+
+            // Determine if we should autoplay (user must have interacted)
+            const shouldAutoplay = hasUserInteractedRef.current
+            console.log('[Player] Creating Howl, autoplay:', shouldAutoplay, 'isIOSPWA:', isIOSPWA)
+
+            // iOS PWA needs special handling for streaming audio
+            // Howler's HTML5 mode can have issues on iOS, so we configure it carefully
+            const initialNowPlaying = result.now_playing ? {
+                id: result.now_playing.song_uuid,
+                title: result.now_playing.title,
+                artist: result.now_playing.artist,
+                artworkUrl: result.now_playing.artwork_url,
+            } : null
+
             const sound = new Howl({
                 src: [streamUrl],
-                html5: true, // Use HTML5 Audio for streaming (better for long files)
+                html5: true, // Use HTML5 Audio for streaming (required for live streams)
                 format: ['mp3'], // Hint mechanism
                 volume: state.volume,
-                autoplay: hasUserInteracted, // Try to autoplay if we have interaction
+                autoplay: shouldAutoplay, // Autoplay if user has interacted
+                preload: true, // Start loading immediately
+                pool: 1, // Only create one audio element (helps iOS)
+                xhr: {
+                    // iOS Safari may need credentials for CORS
+                    withCredentials: true,
+                },
                 onplay: () => {
                     console.log('[Howler] Playing')
-                    setState(s => ({ ...s, isPlaying: true, isLoading: false, error: null }))
+                    setState(s => ({
+                        ...s,
+                        isPlaying: true,
+                        isLoading: false,
+                        error: null,
+                        currentTrack: s.currentTrack ?? initialNowPlaying,
+                    }))
                     setWasPausedByBackground(false)
                 },
                 onpause: () => {
@@ -537,18 +704,53 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
                 },
                 onend: () => {
                     console.log('[Howler] Ended')
-                    setState(s => ({ ...s, isPlaying: false }))
+                    // For streaming audio, 'end' usually means stream was interrupted
+                    // Don't set isPlaying to false, as the stream might restart
+                    // Only set to false if we're explicitly stopping
+                    if (!soundRef.current?.playing()) {
+                        setState(s => ({ ...s, isPlaying: false }))
+                    }
                 },
                 onstop: () => {
                     setState(s => ({ ...s, isPlaying: false }))
                 },
                 onload: () => {
-                    console.log('[Howler] Loaded')
-                    setState(s => ({ ...s, isLoading: false, duration: sound.duration() }))
+                    // HTML5 streaming audio can fire onload multiple times as the buffer refills
+                    // Only handle resume/initial play on the first load event
+                    if (initialLoadHandled) {
+                        console.log('[Howler] Loaded (buffer refill, ignoring)')
+                        return
+                    }
+                    initialLoadHandled = true
+
+                    console.log('[Howler] Loaded (initial)')
+                    console.log('[Player] Resume check:', { resume, position_sec: result.position_sec })
+
+                    // If resuming, update state with position for UI display
+                    // Note: Backend handles the actual seek via FFmpeg, so we don't seek here
+                    if (resume && result.position_sec !== undefined && result.position_sec > 0) {
+                        console.log(`[Player] Resumed at position ${result.position_sec}s (backend handled seek)`)
+                        setState(s => ({ ...s, isLoading: false, duration: sound.duration(), currentTime: result.position_sec }))
+                    } else {
+                        setState(s => ({ ...s, isLoading: false, duration: sound.duration() }))
+                    }
+
+                    // Ensure we're playing (autoplay should have started, but force if needed)
+                    if (!sound.playing() && hasUserInteractedRef.current) {
+                        console.log('[Player] Ensuring playback (autoplay may have been blocked)')
+                        sound.play()
+                    }
                 },
                 onloaderror: (_id, err) => {
                     console.error('[Howler] Load error:', err)
-                    setState(s => ({ ...s, isLoading: false, error: 'Stream load failed' }))
+                    // On iOS, load errors can happen due to background restrictions
+                    // Don't immediately show error, try to recover
+                    if (isIOSPWA) {
+                        console.log('[Player] iOS load error - will retry on user interaction')
+                        setState(s => ({ ...s, isLoading: false, isPlaying: false }))
+                    } else {
+                        setState(s => ({ ...s, isLoading: false, error: 'Stream load failed' }))
+                    }
                 },
                 onplayerror: (_id, err) => {
                     console.warn('[Howler] Play error (autoplay blocked?):', err)
@@ -558,31 +760,31 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
                     // Try to unlock audio context just in case
                     sound.once('unlock', () => {
+                        console.log('[Howler] Audio unlocked, attempting play')
                         sound.play()
                     })
                 }
             })
 
-            soundRef.current = sound
-            if (hasUserInteracted) {
-                sound.play()
+            // iOS PWA: Set playsInline on the underlying audio element for better compatibility
+            // @ts-ignore - Access internal Howler audio nodes
+            const nodes = sound._sounds?.[0]?._node
+            if (nodes && isIOSPWA) {
+                console.log('[Player] Configuring iOS audio element')
+                nodes.playsInline = true
+                nodes.setAttribute('playsinline', '')
+                nodes.setAttribute('webkit-playsinline', '')
             }
 
-            // Map now_playing if provided
-            const currentTrack = result.now_playing ? {
-                id: result.now_playing.song_uuid,
-                title: result.now_playing.title,
-                artist: result.now_playing.artist,
-                artworkUrl: result.now_playing.artwork_url,
-            } : null
+
+            soundRef.current = sound
 
             setState(s => ({
                 ...s,
                 sessionId: result.session_id,
+                activeMoodId: result.mood_id || moodId || s.activeMoodId,
                 streamUrl,
                 wsUrl,
-                currentTrack,
-                isLoading: false,
             }))
 
         } catch (err) {
@@ -597,17 +799,27 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
                 setState(s => ({ ...s, isLoading: false, error: 'Failed to start stream' }))
             }
         }
-    }, [hasUserInteracted, navigate, state.volume])
+    }, [navigate, state.volume])
 
     const stopStream = useCallback(async () => {
+        console.log('[Player] Stopping stream...')
+
+        // Stop the audio first
+        if (soundRef.current) {
+            soundRef.current.stop()
+            soundRef.current.unload()
+            soundRef.current = null
+        }
+
+        // Disconnect WebSocket
+        wsManagerRef.current?.disconnect()
+
+        // Tell backend to stop
         try {
             await api.stopStream()
         } catch {
             // Ignore errors
         }
-
-        soundRef.current?.unload()
-        wsManagerRef.current?.disconnect()
 
         setState(s => ({
             ...s,
@@ -616,23 +828,29 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
             streamUrl: null,
             wsUrl: null,
             wsConnected: false,
+            currentTrack: null,
         }))
+
+        console.log('[Player] Stream stopped')
     }, [])
 
-    const setActiveMood = useCallback(async (moodId: string) => {
-        // Check if we have a saved session for this mood
-        const savedSession = moodSessionsRef.current.get(moodId)
-        
-        // If same mood and session exists, just seek to saved position (resume)
-        if (state.activeMoodId === moodId && state.sessionId) {
-            if (savedSession && savedSession.position > 0) {
-                console.log(`[Player] Resuming mood ${moodId} from position ${savedSession.position}s`)
-                soundRef.current?.seek(savedSession.position)
-            }
-            return
-        }
+    // Internal function to execute mood switch (called by dialog confirm/cancel or directly)
+    const executeMoodSwitch = useCallback(async (moodId: string, resume: boolean = false) => {
+        console.log(`[Player] Executing mood switch to ${moodId}, resume=${resume}`)
 
-        // Save current position before switching
+        // Immediately update UI to show new mood is selected and we're loading
+        setState(s => ({
+            ...s,
+            isLoading: true,
+            error: null,
+            activeMoodId: moodId,
+            currentTrack: null,
+            queue: [],
+            feedback: null,
+            currentStatus: null,
+        }))
+
+        // Save current position before switching (if playing)
         if (state.activeMoodId && state.sessionId && soundRef.current) {
             const currentPosition = soundRef.current.seek()
             if (typeof currentPosition === 'number' && currentPosition > 0) {
@@ -642,30 +860,96 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
                     sessionId: state.sessionId,
                     position: currentPosition,
                     timestamp: Date.now(),
+                    trackTitle: state.currentTrack?.title,
+                    trackArtist: state.currentTrack?.artist,
+                    trackArtwork: state.currentTrack?.artworkUrl,
                 })
                 saveMoodSessions(sessions)
                 console.log(`[Player] Saved position ${currentPosition}s for mood ${state.activeMoodId}`)
             }
         }
 
-        // Stop current stream before starting new one
-        if (state.sessionId && state.activeMoodId !== moodId) {
-            console.log('[Player] Stopping current stream before mood switch')
-            await stopStream()
+        // Stop current audio and WebSocket
+        if (soundRef.current) {
+            console.log('[Player] Stopping current audio for mood switch')
+            soundRef.current.stop()
+            soundRef.current.unload()
+            soundRef.current = null
         }
 
-        // Start new stream with new mood
-        await startStream(moodId)
-        
-        // After stream starts, seek to saved position if available
-        if (savedSession && savedSession.position > 0) {
-            // Wait a bit for stream to initialize
-            setTimeout(() => {
-                console.log(`[Player] Seeking to saved position ${savedSession.position}s for mood ${moodId}`)
-                soundRef.current?.seek(savedSession.position)
-            }, 1000)
+        // Disconnect WebSocket
+        wsManagerRef.current?.disconnect()
+
+        // Tell backend to stop current stream
+        if (state.sessionId) {
+            api.stopStream().catch(() => { })
         }
-    }, [startStream, stopStream, state.activeMoodId, state.sessionId])
+
+        // Small delay to ensure cleanup is complete
+        await new Promise(resolve => setTimeout(resolve, 150))
+
+        // Start new stream with new mood
+        console.log(`[Player] Starting new stream for mood: ${moodId}`)
+        await startStream(moodId, resume)
+    }, [startStream, state.activeMoodId, state.sessionId, state.currentTrack])
+
+    const setActiveMood = useCallback(async (moodId: string, moodName?: string, moodColor?: string) => {
+        console.log(`[Player] Switching to mood: ${moodId}`)
+
+        // Clicking a mood pill is a user interaction!
+        hasUserInteractedRef.current = true
+        setHasUserInteractedState(true)
+
+        // If same mood and session exists, just resume
+        if (state.activeMoodId === moodId && state.sessionId) {
+            console.log(`[Player] Same mood, resuming`)
+            if (soundRef.current && !soundRef.current.playing()) {
+                soundRef.current.play()
+            }
+            return
+        }
+
+        // Check if target mood has a saved session
+        const savedSession = moodSessionsRef.current.get(moodId)
+        if (savedSession && savedSession.position > 5) {
+            // Show dialog to ask user if they want to resume or start fresh
+            console.log(`[Player] Found saved session for mood ${moodId} at position ${savedSession.position}s`)
+            setMoodSwitchDialog({
+                open: true,
+                moodId,
+                moodName: moodName || 'this mood',
+                moodColor: moodColor || '#888',
+                savedPosition: savedSession.position,
+                savedTrack: savedSession.trackTitle ? {
+                    title: savedSession.trackTitle,
+                    artist: savedSession.trackArtist || 'Unknown',
+                    artworkUrl: savedSession.trackArtwork,
+                } : null,
+            })
+            return
+        }
+
+        // No saved session, switch directly
+        await executeMoodSwitch(moodId, false)
+    }, [executeMoodSwitch, state.activeMoodId, state.sessionId])
+
+    const confirmMoodSwitch = useCallback((resume: boolean) => {
+        const { moodId } = moodSwitchDialog
+        if (!moodId) return
+
+        console.log(`[Player] User confirmed mood switch, resume=${resume}`)
+
+        // Close dialog
+        setMoodSwitchDialog(s => ({ ...s, open: false }))
+
+        // Execute the switch
+        executeMoodSwitch(moodId, resume)
+    }, [moodSwitchDialog, executeMoodSwitch])
+
+    const cancelMoodSwitch = useCallback(() => {
+        console.log('[Player] User cancelled mood switch')
+        setMoodSwitchDialog(s => ({ ...s, open: false }))
+    }, [])
 
     const submitFeedback = useCallback(async (type: 'like' | 'dislike') => {
         if (!state.currentTrack) return
@@ -704,6 +988,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
                 setHasUserInteracted,
                 wasPausedByBackground,
                 isIOSPWA,
+                moodSwitchDialog,
+                confirmMoodSwitch,
+                cancelMoodSwitch,
             }}
         >
             {children}

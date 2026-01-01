@@ -1,14 +1,25 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { motion } from 'framer-motion'
-import { ThumbsUp, ThumbsDown, Clock, AlertCircle, Loader2 } from 'lucide-react'
+import { ThumbsUp, ThumbsDown, Clock, AlertCircle, Loader2, Music2, Heart, TrendingUp, Calendar, Brain, Sparkles, PlusCircle, MinusCircle, SkipForward } from 'lucide-react'
+import { LogoMark } from '@/components/branding/Logo'
 import { Button } from '@/components/ui/button'
 import * as api from '@/lib/jamifyApi'
 import { cn } from '@/lib/utils'
+import { HelperCard } from '@/components/ui/HelperCard'
+import { useFirstRunHint } from '@/hooks/useFirstRunHint'
+
+interface DateGroup {
+    label: string
+    items: api.PlayHistoryItem[]
+}
 
 export default function HistoryPage() {
-    const [feedback, setFeedback] = useState<api.FeedbackListItem[]>([])
+    const [activeTab, setActiveTab] = useState<'history' | 'training'>('history')
+    const [playHistory, setPlayHistory] = useState<api.PlayHistoryItem[]>([])
+    const [trainingHistory, setTrainingHistory] = useState<api.TrainingLogEntry[]>([])
     const [isLoading, setIsLoading] = useState(true)
     const [error, setError] = useState<string | null>(null)
+    const firstRunHint = useFirstRunHint('jamify_hint_history')
 
     useEffect(() => {
         loadHistory()
@@ -18,19 +29,12 @@ export default function HistoryPage() {
         setIsLoading(true)
         setError(null)
         try {
-            // The backend uses feedback endpoint for now
-            // getHistory will return empty array if /history is not implemented
-            const historyData = await api.getHistory()
-
-            // If history endpoint works, great! Otherwise fall back to feedback
-            if (historyData.length > 0) {
-                // Map history data if available
-                // For now, just show feedback as history
-            }
-
-            // Load feedback as fallback history view
-            const feedbackData = await api.getFeedback(undefined, 50)
-            setFeedback(feedbackData)
+            const [playsData, trainingData] = await Promise.all([
+                api.getPlayHistory(100),
+                api.getTrainingHistory(50)
+            ])
+            setPlayHistory(playsData)
+            setTrainingHistory(trainingData)
         } catch (err) {
             console.error('[HistoryPage] Failed to load history:', err)
             setError('Failed to load history')
@@ -38,6 +42,48 @@ export default function HistoryPage() {
             setIsLoading(false)
         }
     }
+
+    // Group play history by date
+    const groupedPlays = useMemo(() => {
+        const groups: DateGroup[] = []
+        const now = new Date()
+        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+        const yesterday = new Date(today.getTime() - 86400000)
+        const weekAgo = new Date(today.getTime() - 7 * 86400000)
+
+        const todayItems: api.PlayHistoryItem[] = []
+        const yesterdayItems: api.PlayHistoryItem[] = []
+        const weekItems: api.PlayHistoryItem[] = []
+        const olderItems: api.PlayHistoryItem[] = []
+
+        playHistory.forEach(item => {
+            const date = new Date(item.started_at)
+            if (date >= today) {
+                todayItems.push(item)
+            } else if (date >= yesterday) {
+                yesterdayItems.push(item)
+            } else if (date >= weekAgo) {
+                weekItems.push(item)
+            } else {
+                olderItems.push(item)
+            }
+        })
+
+        if (todayItems.length > 0) groups.push({ label: 'Today', items: todayItems })
+        if (yesterdayItems.length > 0) groups.push({ label: 'Yesterday', items: yesterdayItems })
+        if (weekItems.length > 0) groups.push({ label: 'This Week', items: weekItems })
+        if (olderItems.length > 0) groups.push({ label: 'Earlier', items: olderItems })
+
+        return groups
+    }, [playHistory])
+
+    // Stats
+    const stats = useMemo(() => {
+        const total = playHistory.length
+        const skipped = playHistory.filter(p => p.skipped).length
+        const completed = total - skipped
+        return { total, completed, skipped }
+    }, [playHistory])
 
     function formatTimeAgo(dateString: string): string {
         const date = new Date(dateString)
@@ -53,133 +99,325 @@ export default function HistoryPage() {
         return `${diffDays}d ago`
     }
 
-    async function handleFeedback(item: api.FeedbackListItem, type: 'like' | 'dislike') {
-        try {
-            await api.submitFeedback({
-                song_uuid: item.song_uuid,
-                track_title: item.track_title,
-                track_artist: item.track_artist,
-                mood_id: item.mood_id || undefined,
-                value: type,
-            })
-            // Optimistically update the UI
-            setFeedback(prev =>
-                prev.map(f =>
-                    f.id === item.id
-                        ? { ...f, value: type }
-                        : f
-                )
-            )
-        } catch (err) {
-            console.error('[HistoryPage] Failed to submit feedback:', err)
-        }
-    }
+
 
     if (isLoading) {
         return (
-            <div className="min-h-full flex items-center justify-center">
-                <Loader2 className="w-8 h-8 animate-spin text-primary" />
+            <div className="h-full bg-background relative overflow-hidden">
+                <div className="absolute inset-0 pointer-events-none">
+                    <div className="absolute -top-24 right-[-10%] h-56 w-56 rounded-full bg-primary/20 blur-3xl" />
+                    <div className="absolute bottom-[-20%] left-[10%] h-64 w-64 rounded-full bg-accent/20 blur-3xl" />
+                </div>
+                <div className="relative h-full flex items-center justify-center">
+                    <div className="glass-subtle rounded-2xl border border-white/10 px-5 py-4 flex items-center gap-3">
+                        <Loader2 className="w-5 h-5 animate-spin text-primary" />
+                        <div className="text-left">
+                            <p className="text-sm font-medium">Loading history</p>
+                            <p className="text-xs text-muted-foreground">Fetching your DJ sessions</p>
+                        </div>
+                    </div>
+                </div>
             </div>
         )
     }
 
     if (error) {
         return (
-            <div className="min-h-full px-4 py-6 pt-safe-top">
-                <div className="text-center py-12">
-                    <AlertCircle className="w-12 h-12 text-amber-500 mx-auto mb-4" />
-                    <p className="text-muted-foreground">{error}</p>
-                    <Button variant="outline" className="mt-4" onClick={loadHistory}>
-                        Try Again
-                    </Button>
+            <div className="h-full bg-background relative overflow-hidden">
+                <div className="absolute inset-0 pointer-events-none">
+                    <div className="absolute -top-24 right-[-10%] h-56 w-56 rounded-full bg-destructive/20 blur-3xl" />
+                    <div className="absolute bottom-[-20%] left-[10%] h-64 w-64 rounded-full bg-warning/20 blur-3xl" />
+                </div>
+                <div className="relative h-full flex items-center justify-center px-6">
+                    <motion.div
+                        initial={{ opacity: 0, scale: 0.95 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        className="text-center py-8 px-6 rounded-3xl border border-white/10 glass-subtle max-w-sm w-full"
+                    >
+                        <div className="inline-flex p-4 rounded-2xl bg-destructive/20 mb-4">
+                            <AlertCircle className="w-8 h-8 text-destructive" />
+                        </div>
+                        <p className="text-lg font-medium mb-2">Something went wrong</p>
+                        <p className="text-muted-foreground text-sm mb-4">{error}</p>
+                        <Button variant="outline" onClick={loadHistory}>
+                            Try Again
+                        </Button>
+                    </motion.div>
                 </div>
             </div>
         )
     }
 
     return (
-        <div className="min-h-full px-4 py-6 pt-safe-top space-y-6">
-            {/* Header */}
-            <div>
-                <h1 className="text-2xl font-bold">History</h1>
-                <p className="text-muted-foreground text-sm">Your recent plays and feedback</p>
+        <div className="h-full bg-background relative overflow-hidden">
+            <div className="absolute inset-0 pointer-events-none">
+                <div className="absolute -top-32 right-[-10%] h-64 w-64 rounded-full bg-primary/20 blur-3xl" />
+                <div className="absolute top-32 left-[-15%] h-72 w-72 rounded-full bg-accent/20 blur-3xl" />
+                <div className="absolute bottom-[-20%] right-[10%] h-72 w-72 rounded-full bg-success/15 blur-3xl" />
+                <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.06),transparent_55%)]" />
             </div>
 
-            {/* History List */}
-            {feedback.length === 0 ? (
-                <div className="text-center py-12">
-                    <Clock className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-                    <p className="text-muted-foreground">No tracks played yet</p>
-                    <p className="text-muted-foreground text-sm mt-1">
-                        Start listening to see your history here
-                    </p>
-                </div>
-            ) : (
-                <div className="space-y-2">
-                    {feedback.map((item, index) => (
-                        <motion.div
-                            key={item.id}
-                            initial={{ opacity: 0, x: -20 }}
-                            animate={{ opacity: 1, x: 0 }}
-                            transition={{ delay: index * 0.03 }}
-                            className="flex items-center gap-3 p-3 rounded-xl bg-card border border-border hover:border-primary/30 transition-colors"
+            <div className="relative h-full flex flex-col px-4 pt-3 pb-3 gap-3">
+                {/* Header */}
+                <motion.div
+                    initial={{ opacity: 0, y: -20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="glass-subtle rounded-3xl border border-white/10 px-4 py-2.5 shadow-lg shadow-black/20 flex items-center justify-between gap-3"
+                >
+                    <div className="flex items-center gap-3">
+                        <LogoMark size={28} />
+                        <div>
+                            <p className="text-[10px] uppercase tracking-[0.3em] text-muted-foreground">History</p>
+                            <h1 className="text-base font-semibold">{activeTab === 'history' ? 'Listening' : 'Training'}</h1>
+                        </div>
+                    </div>
+
+                    {/* Tabs */}
+                    <div className="flex p-1 rounded-full bg-white/5 border border-white/10">
+                        <button
+                            onClick={() => setActiveTab('history')}
+                            className={cn(
+                                "px-3 py-1.5 rounded-full text-xs font-medium transition-all",
+                                activeTab === 'history'
+                                    ? "bg-background text-primary shadow-sm"
+                                    : "text-muted-foreground hover:text-primary"
+                            )}
                         >
-                            {/* Artwork placeholder */}
-                            <div
-                                className="w-14 h-14 rounded-lg flex-shrink-0"
-                                style={{
-                                    background: 'linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%)',
-                                }}
-                            />
+                            Listening
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('training')}
+                            className={cn(
+                                "px-3 py-1.5 rounded-full text-xs font-medium transition-all",
+                                activeTab === 'training'
+                                    ? "bg-background text-primary shadow-sm"
+                                    : "text-muted-foreground hover:text-primary"
+                            )}
+                        >
+                            Training
+                        </button>
+                    </div>
+                </motion.div>
 
-                            {/* Track info */}
-                            <div className="flex-1 min-w-0">
-                                <p className="font-medium truncate">{item.track_title}</p>
-                                <p className="text-sm text-muted-foreground truncate">{item.track_artist}</p>
-                                <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
-                                    <span>{formatTimeAgo(item.created_at)}</span>
-                                    {item.value && (
-                                        <span className={cn(
-                                            "px-1.5 py-0.5 rounded",
-                                            item.value === 'like' && "bg-green-500/20 text-green-500",
-                                            item.value === 'dislike' && "bg-red-500/20 text-red-500",
-                                            item.value === 'skip' && "bg-amber-500/20 text-amber-500"
-                                        )}>
-                                            {item.value}
-                                        </span>
-                                    )}
+                <div className="flex-1 min-h-0 overflow-y-auto scroll-container scrollbar-hide pt-3 pb-2 space-y-4">
+                    {firstRunHint.isVisible && (
+                    <HelperCard
+                        eyebrow="First session"
+                        title="Teach your DJ"
+                        description="Likes and skips are your training signals. The more you rate, the better the mix."
+                        icon={<LogoMark size={20} />}
+                        actionLabel="View training log"
+                        onAction={() => setActiveTab('training')}
+                        onDismiss={firstRunHint.dismiss}
+                    >
+                        <ul className="text-xs text-muted-foreground space-y-1">
+                            <li>Tap like for tracks you want more of.</li>
+                            <li>Tap dislike to steer away.</li>
+                            <li>Review training updates here anytime.</li>
+                        </ul>
+                    </HelperCard>
+                    )}
+
+                    {activeTab === 'history' ? (
+                <>
+                    {/* Stats Hero */}
+                    {playHistory.length > 0 && (
+                        <motion.div
+                            initial={{ opacity: 0, y: 20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: 0.1 }}
+                            className="grid grid-cols-3 gap-2"
+                        >
+                            <div className="relative overflow-hidden p-3 rounded-2xl bg-gradient-to-br from-primary/20 to-primary/5 border border-primary/20">
+                                <div className="absolute top-2 right-2 opacity-20">
+                                    <Music2 className="w-7 h-7" />
                                 </div>
+                                <p className="text-xl font-bold">{stats.total}</p>
+                                <p className="text-xs text-muted-foreground">Tracks</p>
                             </div>
-
-                            {/* Actions */}
-                            <div className="flex items-center gap-1">
-                                <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className={cn(
-                                        "h-9 w-9",
-                                        item.value === 'like' && "text-green-500 hover:text-green-500"
-                                    )}
-                                    onClick={() => handleFeedback(item, 'like')}
-                                >
-                                    <ThumbsUp className={cn("w-4 h-4", item.value === 'like' && "fill-current")} />
-                                </Button>
-                                <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className={cn(
-                                        "h-9 w-9",
-                                        item.value === 'dislike' && "text-red-500 hover:text-red-500"
-                                    )}
-                                    onClick={() => handleFeedback(item, 'dislike')}
-                                >
-                                    <ThumbsDown className={cn("w-4 h-4", item.value === 'dislike' && "fill-current")} />
-                                </Button>
+                            <div className="relative overflow-hidden p-3 rounded-2xl bg-gradient-to-br from-green-500/20 to-green-500/5 border border-green-500/20">
+                                <div className="absolute top-2 right-2 opacity-20">
+                                    <Heart className="w-7 h-7" />
+                                </div>
+                                <p className="text-xl font-bold text-green-500">{stats.completed}</p>
+                                <p className="text-xs text-muted-foreground">Completed</p>
+                            </div>
+                            <div className="relative overflow-hidden p-3 rounded-2xl bg-gradient-to-br from-purple-500/20 to-purple-500/5 border border-purple-500/20">
+                                <div className="absolute top-2 right-2 opacity-20">
+                                    <TrendingUp className="w-7 h-7" />
+                                </div>
+                                <p className="text-xl font-bold text-purple-500">
+                                    {stats.total > 0 ? Math.round((stats.completed / stats.total) * 100) : 0}%
+                                </p>
+                                <p className="text-xs text-muted-foreground">Completion</p>
                             </div>
                         </motion.div>
-                    ))}
+                    )}
+
+                    {/* Timeline */}
+                    {playHistory.length === 0 ? (
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.95 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            className="text-center py-12 px-5 rounded-3xl border border-border/50 bg-gradient-to-br from-surface-2/50 to-transparent backdrop-blur-sm"
+                        >
+                            <div className="inline-flex p-4 rounded-2xl bg-primary/10 mb-4">
+                                <Clock className="w-9 h-9 text-primary" />
+                            </div>
+                            <p className="text-base font-medium mb-1">No tracks played yet</p>
+                            <p className="text-muted-foreground text-sm">Start listening to see your history here</p>
+                        </motion.div>
+                    ) : (
+                        <div className="space-y-4 pb-2">
+                            {groupedPlays.map((group: DateGroup, groupIndex: number) => (
+                                <motion.div
+                                    key={group.label}
+                                    initial={{ opacity: 0, y: 20 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    transition={{ delay: 0.1 + groupIndex * 0.1 }}
+                                >
+                                    {/* Date Header */}
+                                    <div className="flex items-center gap-3 mb-3">
+                                        <Calendar className="w-4 h-4 text-primary" />
+                                        <span className="text-sm font-medium text-primary">{group.label}</span>
+                                        <div className="flex-1 h-px bg-border/50" />
+                                        <span className="text-xs text-muted-foreground">{group.items.length} tracks</span>
+                                    </div>
+
+                                    {/* Track List */}
+                                    <div className="space-y-2 pl-2 border-l-2 border-border/30 ml-1.5">
+                                        {group.items.map((item: api.PlayHistoryItem, index: number) => (
+                                            <motion.div
+                                                key={item.id}
+                                                initial={{ opacity: 0, x: -10 }}
+                                                animate={{ opacity: 1, x: 0 }}
+                                                transition={{ delay: 0.15 + groupIndex * 0.1 + index * 0.02 }}
+                                                className={cn(
+                                                    "group relative flex items-center gap-3 p-2.5 pl-4 rounded-xl",
+                                                    "bg-gradient-to-r from-card/80 to-card/40 backdrop-blur-sm",
+                                                    "border border-border/50 hover:border-primary/30 transition-all",
+                                                    "hover:translate-x-1"
+                                                )}
+                                            >
+                                                {/* Timeline dot */}
+                                                <div className={cn(
+                                                    "absolute -left-[9px] w-4 h-4 rounded-full bg-background border-2 transition-colors",
+                                                    item.skipped ? "border-amber-500" : "border-green-500"
+                                                )} />
+
+                                                {/* Artwork placeholder with gradient */}
+                                                <div
+                                                    className="w-10 h-10 rounded-lg flex-shrink-0 shadow-md flex items-center justify-center"
+                                                    style={{
+                                                        background: item.skipped
+                                                            ? 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)'
+                                                            : 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)',
+                                                    }}
+                                                >
+                                                    <Music2 className="w-5 h-5 text-white/80" />
+                                                </div>
+
+                                                {/* Track info */}
+                                                <div className="flex-1 min-w-0">
+                                                    <p className="font-medium truncate text-sm">{item.track_title}</p>
+                                                    <p className="text-xs text-muted-foreground truncate">{item.track_artist}</p>
+                                                    <div className="flex items-center gap-2 text-[11px] text-muted-foreground mt-0.5">
+                                                        <span>{formatTimeAgo(item.started_at)}</span>
+                                                        {item.skipped && (
+                                                            <span className="text-amber-500">• Skipped</span>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </motion.div>
+                                        ))}
+                                    </div>
+                                </motion.div>
+                            ))}
+                        </div>
+                    )}
+                </>
+            ) : (
+                <div className="space-y-4 pb-2">
+                    {trainingHistory.length === 0 ? (
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.95 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            className="text-center py-12 px-5 rounded-3xl border border-dashed border-border/50 bg-secondary/20"
+                        >
+                            <Brain className="w-9 h-9 text-muted-foreground mb-4 mx-auto" />
+                            <p className="text-base font-medium mb-2">No training insights yet</p>
+                            <p className="text-muted-foreground text-sm">Rate songs to train your AI DJ</p>
+                        </motion.div>
+                    ) : (
+                        <div className="space-y-3">
+                            {trainingHistory.map((item, index) => (
+                                <motion.div
+                                    key={item.id}
+                                    initial={{ opacity: 0, y: 20 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    transition={{ delay: index * 0.05 }}
+                                    className="p-3 rounded-xl border border-border/50 bg-card/50 hover:bg-card hover:border-primary/20 transition-all"
+                                >
+                                    <div className="flex items-start gap-4">
+                                        <div className={cn(
+                                            "mt-1 p-2 rounded-lg",
+                                            item.payload?.source === 'like' ? "bg-green-500/10 text-green-500" :
+                                                item.payload?.source === 'dislike' ? "bg-red-500/10 text-red-500" :
+                                                    item.payload?.source === 'skip' ? "bg-amber-500/10 text-amber-500" :
+                                                        "bg-primary/10 text-primary"
+                                        )}>
+                                            {item.payload?.source === 'like' ? <ThumbsUp className="w-4 h-4" /> :
+                                                item.payload?.source === 'dislike' ? <ThumbsDown className="w-4 h-4" /> :
+                                                    item.payload?.source === 'skip' ? <SkipForward className="w-4 h-4" /> :
+                                                        <Sparkles className="w-4 h-4" />}
+                                        </div>
+
+                                        <div className="flex-1 space-y-2">
+                                            <div className="flex items-center justify-between">
+                                                <h3 className="font-medium text-sm">
+                                                    {item.payload?.track ? `Feedback on "${item.payload.track}"` : 'Session Training'}
+                                                </h3>
+                                                <span className="text-xs text-muted-foreground whitespace-nowrap">
+                                                    {formatTimeAgo(item.timestamp)}
+                                                </span>
+                                            </div>
+
+                                            {(item.payload?.reasoning || item.payload?.insights) && (
+                                                <div className="p-3 rounded-lg bg-secondary/30 border border-border/30 text-xs text-foreground/90 italic">
+                                                    "{item.payload.reasoning || item.payload.insights}"
+                                                </div>
+                                            )}
+
+                                            <div className="flex flex-wrap gap-2">
+                                                {item.payload?.added_artists?.map((artist, i) => (
+                                                    <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-500/10 text-green-500 text-xs font-medium border border-green-500/20">
+                                                        <PlusCircle className="w-3 h-3" />
+                                                        {artist}
+                                                    </span>
+                                                ))}
+                                                {item.payload?.demoted_artist && (
+                                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-500/10 text-red-500 text-xs font-medium border border-red-500/20">
+                                                        <MinusCircle className="w-3 h-3" />
+                                                        {item.payload.demoted_artist}
+                                                    </span>
+                                                )}
+                                            </div>
+
+                                            {item.payload?.mood_name && (
+                                                <p className="text-xs text-muted-foreground mt-1">
+                                                    Updated <span className="text-primary font-medium">{item.payload.mood_name}</span> mood profile
+                                                </p>
+                                            )}
+                                        </div>
+                                    </div>
+                                </motion.div>
+                            ))}
+                        </div>
+                    )}
                 </div>
-            )}
+                    )}
+                </div>
         </div>
+    </div>
     )
 }

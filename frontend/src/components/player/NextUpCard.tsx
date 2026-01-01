@@ -1,5 +1,6 @@
 "use client"
 
+import { useState, useEffect } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { Music, Sparkles } from "lucide-react"
 import { cn } from "@/lib/utils"
@@ -23,6 +24,13 @@ interface NextUpCardProps {
  * Displays loading state when AI is preparing the next segment.
  */
 export function NextUpCard({ track, status, className }: NextUpCardProps) {
+  const [artworkFailed, setArtworkFailed] = useState(false)
+  
+  // Reset artwork failure when track changes
+  useEffect(() => {
+    setArtworkFailed(false)
+  }, [track?.id])
+  
   // Determine if we're preparing next track
   const isPreparing =
     status?.category === "generation" && ["planning", "selecting_track", "mixing", "encoding"].includes(status.step)
@@ -61,7 +69,7 @@ export function NextUpCard({ track, status, className }: NextUpCardProps) {
         {/* Artwork or loading state */}
         <div className="relative w-12 h-12 rounded-lg overflow-hidden flex-shrink-0 bg-surface-2">
           <AnimatePresence mode="wait">
-            {track?.artworkUrl ? (
+            {track?.artworkUrl && !artworkFailed ? (
               <motion.img
                 key={track.id}
                 initial={{ opacity: 0 }}
@@ -70,6 +78,7 @@ export function NextUpCard({ track, status, className }: NextUpCardProps) {
                 src={track.artworkUrl}
                 alt=""
                 className="w-full h-full object-cover"
+                onError={() => setArtworkFailed(true)}
               />
             ) : isPreparing ? (
               <motion.div
@@ -103,16 +112,26 @@ export function NextUpCard({ track, status, className }: NextUpCardProps) {
         {/* Track info or status */}
         <div className="flex-1 min-w-0">
           <p className="text-xs text-muted-foreground mb-0.5">Next up</p>
-          {track ? (
-            <>
-              <p className="text-sm font-medium truncate">{track.title}</p>
-              <p className="text-xs text-muted-foreground truncate">{track.artist}</p>
-            </>
-          ) : isPreparing && statusMessage ? (
-            <p className="text-sm text-primary animate-pulse">{statusMessage}</p>
-          ) : (
-            <p className="text-sm text-muted-foreground">AI is preparing...</p>
-          )}
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={track?.id || status?.step || "idle"}
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              transition={{ duration: 0.2, ease: "easeOut" }}
+            >
+              {track ? (
+                <>
+                  <p className="text-sm font-medium truncate">{track.title}</p>
+                  <p className="text-xs text-muted-foreground truncate">{track.artist}</p>
+                </>
+              ) : isPreparing && statusMessage ? (
+                <p className="text-sm text-primary animate-pulse">{statusMessage}</p>
+              ) : (
+                <p className="text-sm text-muted-foreground">AI is preparing...</p>
+              )}
+            </motion.div>
+          </AnimatePresence>
         </div>
 
         {/* Status indicator */}

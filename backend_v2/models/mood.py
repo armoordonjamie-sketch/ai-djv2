@@ -59,6 +59,7 @@ class Mood(Base):
     # Intro Pre-generation
     intro_segment_path: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     intro_song_uuid: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    intro_used: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)  # Track if pre-gen intro was played
 
     dj_personality: Mapped[str] = mapped_column(
         String(20), 

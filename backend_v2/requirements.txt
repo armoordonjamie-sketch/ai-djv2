@@ -26,8 +26,8 @@ python-dotenv==1.0.1
 httpx==0.28.1
 aiohttp==3.11.10
 
-# OpenAI client (for OpenRouter)
-openai>=1.0.0
+# OpenRouter Python SDK
+openrouter>=1.0.0
 
 # Audio processing
 numpy==2.2.0

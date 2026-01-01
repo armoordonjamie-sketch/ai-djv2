@@ -1,20 +1,23 @@
+# =============================================================================
+# AI-DJ Backend v2 - Dependencies
+# =============================================================================
+
 # FastAPI and ASGI server
 fastapi==0.115.5
 uvicorn[standard]==0.32.1
 
-# WebRTC
-aiortc==1.10.0
-av==13.1.0
+# Database (SQLAlchemy async)
+sqlalchemy[asyncio]>=2.0.36
+aiosqlite==0.20.0
+alembic==1.13.1
+greenlet==3.1.1
 
-# Audio processing
-numpy==2.2.0
-soundfile==0.12.1
-scipy==1.14.1
-ffmpeg-python==0.2.0
+# Authentication
+passlib[bcrypt]==1.7.4
+python-jose[cryptography]==3.3.0
 
-# LangGraph orchestration
-langgraph==0.2.59
-langchain-core==0.3.28
+# Pydantic
+pydantic[email]==2.10.0
 
 # Environment and configuration
 python-dotenv==1.0.1
@@ -23,22 +26,32 @@ python-dotenv==1.0.1
 httpx==0.28.1
 aiohttp==3.11.10
 
-# OpenAI client (for OpenRouter audio API)
-openai>=1.0.0
+# OpenRouter Python SDK
+openrouter>=1.0.0
 
-# Soundcharts official SDK
-soundcharts
+# Audio processing
+numpy==2.2.0
+soundfile==0.12.1
+ffmpeg-python==0.2.0
+librosa==0.11.0
 
-# Song downloader (with default dependencies for EJS challenge solver)
+# Song downloader
 yt-dlp[default]==2025.12.08
 
-# Database
-aiosqlite==0.20.0
+# LangGraph orchestration (v3 architecture)
+langgraph>=0.2.59
+langchain-core>=0.3.28
+langchain-openai>=0.2.0
+langchain-community>=0.3.0
+faiss-cpu>=1.7.4
+
+# Observability (optional)
+# prometheus-fastapi-instrumentator==7.0.0
+# slowapi==0.1.9
 
 # Testing
 pytest==8.3.4
 pytest-asyncio==0.25.2
 
-# CORS
+# CORS / multipart
 python-multipart==0.0.20
-

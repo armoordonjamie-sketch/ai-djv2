@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react"
 import { useNavigate } from "react-router-dom"
 import { motion, AnimatePresence } from "framer-motion"
-import { Music, Sparkles, Check, AlertCircle } from "lucide-react"
+import { Music, Sparkles, Check, AlertCircle, Loader2 } from "lucide-react"
 import { StatusTimeline } from "@/components/ui/StatusTimeline"
 import { SkeletonMoodCard } from "@/components/ui/Skeleton"
 import { useAuth } from "@/providers/AuthProvider"
@@ -44,6 +44,11 @@ export default function MoodCreationPage() {
   const [completedSteps, setCompletedSteps] = useState<StatusStep[]>([])
   const wsRef = useRef<WebSocket | null>(null)
   const isNavigatingRef = useRef(false)
+  const completionTimerRef = useRef<NodeJS.Timeout | null>(null)
+
+  // Track when we first saw completion to ensure minimum display time
+  const completionSeenAtRef = useRef<number | null>(null)
+  const MIN_COMPLETION_DISPLAY_MS = 2000 // Show completion animation for at least 2 seconds
 
   useEffect(() => {
     const wsUrl = `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${window.location.host}/api/v1/ws`
@@ -73,6 +78,9 @@ export default function MoodCreationPage() {
 
     return () => {
       ws.close()
+      if (completionTimerRef.current) {
+        clearTimeout(completionTimerRef.current)
+      }
     }
   }, [])
 
@@ -94,20 +102,49 @@ export default function MoodCreationPage() {
       const data: GenerationStatus = await response.json()
       setStatus(data)
 
-      if (data.status === "complete" && !isNavigatingRef.current) {
-        // Mark all steps complete
+      // Check if ACTUALLY complete:
+      // - Backend status is "complete"
+      // - At least the default mood's intro is ready (intros_ready >= 1)
+      const isActuallyComplete = data.status === "complete" &&
+        data.intros_ready >= 1
+
+      if (isActuallyComplete && !isNavigatingRef.current) {
+        // Mark all steps complete immediately for visual feedback
         setCompletedSteps(["voice_processing", "mood_parsing", "mood_creating", "intro_generating"])
-        isNavigatingRef.current = true
-        
-        // Refresh auth state to update isOnboarded flag
-        await refreshAuth()
-        
-        // Navigate to moods page
-        setTimeout(() => {
+
+        // Track when we first saw completion
+        if (!completionSeenAtRef.current) {
+          completionSeenAtRef.current = Date.now()
+        }
+
+        // Calculate remaining time to show completion animation
+        const timeSinceCompletion = Date.now() - completionSeenAtRef.current
+        const remainingDisplayTime = Math.max(0, MIN_COMPLETION_DISPLAY_MS - timeSinceCompletion)
+
+        // Navigate after minimum display time
+        if (remainingDisplayTime === 0 && !completionTimerRef.current) {
+          isNavigatingRef.current = true
+
+          // Refresh auth state to update isOnboarded flag
+          await refreshAuth()
+
+          // Navigate to moods page
           navigate("/moods", { replace: true })
-        }, 1500)
+        } else if (!completionTimerRef.current) {
+          // Schedule navigation after remaining display time
+          completionTimerRef.current = setTimeout(async () => {
+            if (!isNavigatingRef.current) {
+              isNavigatingRef.current = true
+              await refreshAuth()
+              navigate("/moods", { replace: true })
+            }
+          }, remainingDisplayTime)
+        }
       } else if (data.status === "failed") {
         setError(data.error || "Something went wrong")
+      } else if (data.status === "complete" && data.intros_ready < 1) {
+        // Moods created but default mood intro still generating - show "Finishing touches" phase
+        setCompletedSteps(["voice_processing", "mood_parsing", "mood_creating"])
       }
     } catch (err) {
       console.error("[MoodCreation] Status check failed:", err)
@@ -120,8 +157,33 @@ export default function MoodCreationPage() {
     return () => clearInterval(interval)
   }, [checkStatus])
 
-  const progress = status ? (status.moods_created / status.moods_total) * 100 : 0
-  const isComplete = status?.status === "complete"
+  // Calculate progress including intro generation
+  const calculateProgress = () => {
+    if (!status) return 0
+
+    // If no moods yet, show 0
+    if (status.moods_total === 0) return 0
+
+    // Mood creation is 70% of the progress
+    const moodProgress = (status.moods_created / status.moods_total) * 70
+
+    // Intro generation is 30% of the progress
+    const introProgress = (status.intros_ready / status.moods_total) * 30
+
+    return Math.min(100, moodProgress + introProgress)
+  }
+
+  const progress = calculateProgress()
+  const isComplete = status?.status === "complete" && (status?.intros_ready ?? 0) >= 1
+  const isFinishing = status?.status === "complete" && (status?.intros_ready ?? 0) < 1
+
+  // Dynamic status message
+  const getStatusMessage = () => {
+    if (wsStatus?.user_message) return wsStatus.user_message
+    if (isFinishing) return "Finishing touches..."
+    if (status?.current_step) return status.current_step
+    return "Setting things up..."
+  }
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-background px-4 relative overflow-hidden">
@@ -177,18 +239,27 @@ export default function MoodCreationPage() {
         </motion.div>
 
         {/* Title */}
-        <h1 className="text-2xl font-bold mb-2">{isComplete ? "You're all set!" : "Creating your vibes..."}</h1>
+        <h1 className="text-2xl font-bold mb-2">
+          {isComplete ? "You're all set!" : isFinishing ? "Almost there..." : "Creating your vibes..."}
+        </h1>
 
         {/* Status message with more detail */}
         <p className="text-muted-foreground mb-2">
-          {wsStatus?.user_message || status?.current_step || "Setting things up..."}
+          {getStatusMessage()}
         </p>
-        
-        {/* Show intro generation progress */}
-        {status && status.intros_ready > 0 && status.intros_ready < status.moods_total && (
-          <p className="text-sm text-muted-foreground/70 mb-4">
-            Intros ready: {status.intros_ready}/{status.moods_total}
-          </p>
+
+        {/* Show intro generation progress during finishing phase */}
+        {isFinishing && (
+          <motion.div
+            initial={{ opacity: 0, y: 5 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="flex items-center justify-center gap-2 mb-4"
+          >
+            <Loader2 className="w-4 h-4 animate-spin text-primary" />
+            <span className="text-sm text-muted-foreground/70">
+              Preparing intros: {status?.intros_ready}/{status?.moods_total}
+            </span>
+          </motion.div>
         )}
 
         <div className="mb-8">
@@ -266,10 +337,14 @@ export default function MoodCreationPage() {
 
         {/* Progress text */}
         <p className="text-sm text-muted-foreground">
-          {status ? `${status.moods_created} of ${status.moods_total} moods created` : "Starting..."}
+          {status ? (
+            isFinishing
+              ? `${status.moods_created} moods created, preparing ${status.moods_total - status.intros_ready} intros...`
+              : `${status.moods_created} of ${status.moods_total} moods created`
+          ) : "Starting..."}
         </p>
 
-        {!isComplete && status && status.moods_created === 0 && (
+        {!isComplete && !isFinishing && status && status.moods_created === 0 && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 1 }} className="mt-8">
             <p className="text-xs text-muted-foreground mb-3">Preview of your moods:</p>
             <div className="flex gap-3 overflow-hidden">
@@ -294,14 +369,25 @@ export default function MoodCreationPage() {
                 <div className="flex-1">
                   <p className="text-destructive text-sm font-medium">Something went wrong</p>
                   <p className="text-destructive/80 text-xs mt-1">{error}</p>
+                  <p className="text-destructive/80 text-xs mt-2">
+                    We need at least one mood intro before playback can start. This usually resolves within a minute.
+                  </p>
                 </div>
               </div>
-              <button
-                onClick={() => navigate("/moods", { replace: true })}
-                className="mt-3 w-full text-sm text-primary hover:underline"
-              >
-                Continue anyway →
-              </button>
+              <div className="mt-4 flex flex-col gap-2">
+                <button
+                  onClick={checkStatus}
+                  className="w-full text-sm font-medium rounded-lg border border-destructive/30 text-destructive py-2 hover:bg-destructive/10 transition-colors"
+                >
+                  Retry status check
+                </button>
+                <button
+                  onClick={() => navigate("/moods", { replace: true })}
+                  className="w-full text-sm text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  Go to moods (playback may still be unavailable)
+                </button>
+              </div>
             </motion.div>
           )}
         </AnimatePresence>

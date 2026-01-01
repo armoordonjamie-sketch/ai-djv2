@@ -11,7 +11,7 @@ Prod-like mode (serve built frontend + API from same origin):
 import os
 import logging
 from contextlib import asynccontextmanager
-from typing import AsyncIterator
+from typing import AsyncIterator, Optional, IO
 
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -43,6 +43,8 @@ from backend_v2.api.agent_settings import router as agent_settings_router
 from backend_v2.api.prompts import router as prompts_router
 from backend_v2.api.stream import router as stream_router
 from backend_v2.api.ws import router as ws_router
+from backend_v2.api.session import router as session_router
+from backend_v2.api.spotify import router as spotify_router
 
 # Configure logging
 logging.basicConfig(
@@ -50,6 +52,78 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger("ai-dj-v2")
+
+
+def _acquire_worker_lock() -> Optional[IO[str]]:
+    """Acquire a cross-process lock to ensure only one instance runs background workers."""
+    lock_path = os.path.join("data", "workers.lock")
+    try:
+        handle = open(lock_path, "a+", encoding="utf-8")
+    except OSError:
+        return None
+    try:
+        if os.name == "nt":
+            import msvcrt
+            msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        try:
+            handle.seek(0)
+            handle.truncate()
+            handle.write(str(os.getpid()))
+            handle.flush()
+        except OSError:
+            try:
+                handle.close()
+            except OSError:
+                pass
+            return None
+        return handle
+    except OSError:
+        try:
+            handle.close()
+        except OSError:
+            pass
+        return None
+
+
+def _release_worker_lock(handle: Optional[IO[str]]) -> None:
+    if not handle:
+        return
+    try:
+        if os.name == "nt":
+            import msvcrt
+            msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+    except OSError:
+        pass
+    try:
+        handle.close()
+    except OSError:
+        pass
+
+
+async def _ensure_training_metrics_table() -> None:
+    """Ensure the training_metrics table exists in dev mode."""
+    try:
+        from sqlalchemy import text
+        from backend_v2.db.base import Base
+        from backend_v2.db.session import engine
+        from backend_v2 import models  # noqa: F401 - ensure models are registered
+
+        async with engine.begin() as conn:
+            result = await conn.execute(
+                text("SELECT name FROM sqlite_master WHERE type='table' AND name='training_metrics'")
+            )
+            exists = result.scalar_one_or_none()
+            if exists is None:
+                await conn.run_sync(Base.metadata.create_all)
+                logger.info("Training metrics table created (dev mode)")
+    except Exception as e:
+        logger.warning(f"Failed to ensure training_metrics table: {e}")
 
 
 @asynccontextmanager
@@ -75,14 +149,46 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # NOTE: In production, use Alembic migrations instead
     from backend_v2.db.session import init_db
     await init_db()
+    await _ensure_training_metrics_table()
+
+    # Ensure only one process runs background workers to avoid duplicate work/cost
+    workers_enabled_env = os.getenv("WORKERS_ENABLED", "true").lower() not in {"0", "false", "no"}
+    worker_lock = None
+    if workers_enabled_env:
+        worker_lock = _acquire_worker_lock()
+    app.state.worker_lock = worker_lock
+    workers_enabled = worker_lock is not None and workers_enabled_env
+    if not workers_enabled:
+        logger.warning("Background workers disabled (worker lock not acquired or WORKERS_ENABLED=false)")
     
     # Start acquisition worker for background track downloads
-    try:
-        from backend_v2.services.acquisition_worker import start_acquisition_worker
-        await start_acquisition_worker(poll_interval=5, max_concurrent=2)
-        logger.info("✅ Acquisition worker started")
-    except Exception as e:
-        logger.warning(f"⚠️  Failed to start acquisition worker: {e}")
+    if workers_enabled:
+        try:
+            from backend_v2.services.acquisition_worker import start_acquisition_worker
+            await start_acquisition_worker(poll_interval=5, max_concurrent=2)
+            logger.info("✅ Acquisition worker started")
+        except Exception as e:
+            logger.warning(f"⚠️  Failed to start acquisition worker: {e}")
+    
+    # Start intro generator worker for pre-generating mood intros
+    if workers_enabled:
+        # NOTE: max_concurrent=1 is required for SQLite to avoid "database is locked" errors
+        try:
+            from backend_v2.services.intro_generator_worker import start_intro_generator_worker
+            await start_intro_generator_worker(poll_interval=60, max_concurrent=1, regenerate_after_days=7)
+            logger.info("✅ Intro generator worker started")
+        except Exception as e:
+            logger.warning(f"⚠️  Failed to start intro generator worker: {e}")
+    
+    # Start mood enrichment worker to populate moods with similar artists
+    if workers_enabled:
+        # This ensures catalog searches have diverse sources beyond user favorites
+        try:
+            from backend_v2.services.mood_enrichment import ensure_moods_enriched
+            await ensure_moods_enriched()
+            logger.info("✅ Mood enrichment worker started")
+        except Exception as e:
+            logger.warning(f"⚠️  Failed to start mood enrichment worker: {e}")
     
     # Log initial metrics summary
     try:
@@ -100,12 +206,22 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     logger.info("🛑 AI-DJ Backend v2 shutting down...")
     
     # Stop acquisition worker
-    try:
-        from backend_v2.services.acquisition_worker import stop_acquisition_worker
-        await stop_acquisition_worker()
-        logger.info("✅ Acquisition worker stopped")
-    except Exception as e:
-        logger.warning(f"⚠️  Error stopping acquisition worker: {e}")
+    if app.state.worker_lock:
+        try:
+            from backend_v2.services.acquisition_worker import stop_acquisition_worker
+            await stop_acquisition_worker()
+            logger.info("✅ Acquisition worker stopped")
+        except Exception as e:
+            logger.warning(f"⚠️  Error stopping acquisition worker: {e}")
+    
+    # Stop intro generator worker
+    if app.state.worker_lock:
+        try:
+            from backend_v2.services.intro_generator_worker import stop_intro_generator_worker
+            await stop_intro_generator_worker()
+            logger.info("✅ Intro generator worker stopped")
+        except Exception as e:
+            logger.warning(f"⚠️  Error stopping intro generator worker: {e}")
     
     # Log final metrics summary
     try:
@@ -116,6 +232,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         logger.warning(f"⚠️  Error logging metrics: {e}")
     
     await close_db()
+    _release_worker_lock(app.state.worker_lock)
     logger.info("👋 Shutdown complete")
 
 
@@ -188,6 +305,7 @@ app.include_router(feedback_router, prefix="/api/v1/feedback", tags=["feedback"]
 app.include_router(agent_settings_router, prefix="/api/v1/agent-settings", tags=["settings"])
 app.include_router(prompts_router, prefix="/api/v1/prompts", tags=["prompts"])
 app.include_router(stream_router, prefix="/api/v1/stream", tags=["stream"])
+app.include_router(session_router, prefix="/api/v1/session", tags=["session"])
 app.include_router(ws_router, prefix="/api/v1/ws", tags=["websocket"])
 
 # Onboarding router
@@ -205,6 +323,9 @@ app.include_router(deezer_tools_router, prefix="/api/v1/deezer", tags=["deezer"]
 # History endpoint
 from backend_v2.api.history import router as history_router
 app.include_router(history_router, prefix="/api/v1/history", tags=["history"])
+
+# Spotify integration
+app.include_router(spotify_router, tags=["spotify"])
 
 
 # =============================================================================

@@ -4,6 +4,14 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
+  /* iOS PWA Safe Area & Viewport (set by IOSPWAProvider, with fallbacks) */
+  --safe-area-top: env(safe-area-inset-top, 0px);
+  --safe-area-right: env(safe-area-inset-right, 0px);
+  --safe-area-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-area-left: env(safe-area-inset-left, 0px);
+  --vh: 1vh;
+  --app-height: 100vh;
+
   --background: oklch(0.13 0.02 285);
   --foreground: oklch(0.97 0.01 285);
   --card: oklch(0.18 0.02 285);
@@ -62,6 +70,43 @@
   --ease-in: cubic-bezier(0.4, 0, 1, 1);
   --ease-out: cubic-bezier(0, 0, 0.2, 1);
   --ease-spring: cubic-bezier(0.175, 0.885, 0.32, 1.275);
+
+  /* Premium glassmorphism tokens */
+  --glass-blur: 24px;
+  --glass-blur-strong: 40px;
+  --glass-blur-subtle: 12px;
+  --glass-bg: oklch(0.15 0.02 285 / 0.7);
+  --glass-bg-light: oklch(0.2 0.02 285 / 0.5);
+  --glass-border: oklch(1 0 0 / 0.1);
+
+  /* Vinyl/disc animation tokens - responsive */
+  --vinyl-size: 260px;
+  --vinyl-size-mobile: 160px;
+  --vinyl-size-sm: 200px;
+  --vinyl-inner: 40%;
+  --vinyl-groove-color: oklch(0.25 0 0 / 0.3);
+  --vinyl-spin-duration: 3s;
+
+  /* Track transition animation tokens */
+  --track-transition-duration: 0.5s;
+  --track-slide-distance: 120%;
+
+  /* AI Activity Feed tokens */
+  --activity-feed-height: 160px;
+  --activity-feed-collapsed: 44px;
+  --activity-item-height: 36px;
+
+  /* Waveform tokens */
+  --waveform-bars: 32;
+  --waveform-gap: 3px;
+  --waveform-bar-width: 4px;
+  --waveform-height: 48px;
+
+  /* Premium glow intensities */
+  --glow-soft: 0 0 30px;
+  --glow-medium: 0 0 50px;
+  --glow-strong: 0 0 80px;
+  --glow-xl: 0 0 120px;
 }
 
 .light {
@@ -153,6 +198,7 @@
   * {
     @apply border-border outline-ring/50;
   }
+
   body {
     @apply bg-background text-foreground;
   }
@@ -163,16 +209,19 @@
   0% {
     transform: translateX(-100%);
   }
+
   100% {
     transform: translateX(100%);
   }
 }
 
 @keyframes pulse-subtle {
+
   0%,
   100% {
     opacity: 1;
   }
+
   50% {
     opacity: 0.7;
   }
@@ -182,6 +231,7 @@
   from {
     opacity: 0;
   }
+
   to {
     opacity: 1;
   }
@@ -191,6 +241,7 @@
   from {
     opacity: 1;
   }
+
   to {
     opacity: 0;
   }
@@ -201,6 +252,7 @@
     opacity: 0;
     transform: translateY(8px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -212,6 +264,7 @@
     opacity: 0;
     transform: translateY(-8px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -223,6 +276,7 @@
     opacity: 0;
     transform: scale(0.95);
   }
+
   to {
     opacity: 1;
     transform: scale(1);
@@ -234,6 +288,7 @@
     opacity: 1;
     transform: scale(1);
   }
+
   to {
     opacity: 0;
     transform: scale(0.95);
@@ -244,16 +299,55 @@
   from {
     transform: rotate(0deg);
   }
+
   to {
     transform: rotate(360deg);
   }
 }
 
+@keyframes vinyl-spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes waveform-pulse {
+
+  0%,
+  100% {
+    transform: scaleY(0.3);
+  }
+
+  50% {
+    transform: scaleY(1);
+  }
+}
+
+@keyframes glow-pulse {
+
+  0%,
+  100% {
+    opacity: 0.4;
+    transform: scale(1);
+  }
+
+  50% {
+    opacity: 0.7;
+    transform: scale(1.05);
+  }
+}
+
 @keyframes bounce-subtle {
+
   0%,
   100% {
     transform: translateY(0);
   }
+
   50% {
     transform: translateY(-4px);
   }
@@ -264,6 +358,7 @@
     transform: scale(0);
     opacity: 0.5;
   }
+
   100% {
     transform: scale(4);
     opacity: 0;
@@ -274,6 +369,7 @@
   0% {
     stroke-dashoffset: 24;
   }
+
   100% {
     stroke-dashoffset: 0;
   }
@@ -332,6 +428,7 @@
 
 /* Reduced motion support */
 @media (prefers-reduced-motion: reduce) {
+
   *,
   *::before,
   *::after {
@@ -396,10 +493,46 @@
   pointer-events: none;
 }
 
-/* Glass effect */
+/* Glass effects - Premium */
 .glass {
-  backdrop-filter: blur(24px);
-  background-color: oklch(0.18 0.02 285 / 0.8);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  background-color: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+}
+
+.glass-strong {
+  backdrop-filter: blur(var(--glass-blur-strong));
+  -webkit-backdrop-filter: blur(var(--glass-blur-strong));
+  background-color: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+}
+
+.glass-subtle {
+  backdrop-filter: blur(var(--glass-blur-subtle));
+  -webkit-backdrop-filter: blur(var(--glass-blur-subtle));
+  background-color: var(--glass-bg-light);
+  border: 1px solid var(--glass-border);
+}
+
+/* Vinyl disc animations */
+.vinyl-spin {
+  animation: vinyl-spin var(--vinyl-spin-duration) linear infinite;
+}
+
+.vinyl-spin-paused {
+  animation-play-state: paused;
+}
+
+/* Waveform bar animation */
+.waveform-bar {
+  transform-origin: bottom;
+  animation: waveform-pulse 1s ease-in-out infinite;
+}
+
+/* Premium glow pulse */
+.glow-pulse {
+  animation: glow-pulse 3s ease-in-out infinite;
 }
 
 /* Glow effects */
@@ -505,11 +638,13 @@ input[type="tel"],
 input[type="url"],
 input[type="search"],
 textarea {
-  font-size: 16px !important; /* Prevent iOS zoom on focus */
+  font-size: 16px !important;
+  /* Prevent iOS zoom on focus */
 }
 
 /* iOS specific fixes */
 @supports (-webkit-touch-callout: none) {
+
   /* Prevent pull-to-refresh on iOS */
   body {
     overscroll-behavior-y: none;
@@ -518,5 +653,359 @@ textarea {
   /* Fix for iOS viewport height issues */
   .min-h-screen {
     min-height: -webkit-fill-available;
+  }
+}
+
+/* ========================================= */
+/* iOS PWA Optimizations */
+/* ========================================= */
+
+/* Prevent double-tap zoom on all interactive elements */
+button,
+a,
+input,
+select,
+textarea,
+[role="button"],
+[tabindex] {
+  touch-action: manipulation;
+}
+
+/* Minimum touch target size (44x44pt) for iOS accessibility */
+.touch-target {
+  min-width: 44px;
+  min-height: 44px;
+}
+
+/* Ensure buttons meet iOS touch target guidelines */
+button:not(.compact) {
+  min-height: 44px;
+}
+
+/* Prevent overscroll on scrollable containers */
+.scroll-container {
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Prevent selection on app-like UI elements */
+.no-select {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+/* PWA app-like body behavior */
+body {
+  /* Prevent pull-to-refresh everywhere */
+  overscroll-behavior-y: none;
+
+  /* Smooth scrolling on iOS */
+  -webkit-overflow-scrolling: touch;
+
+  /* Prevent text selection on long press for app-like feel */
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Re-enable text selection where needed (inputs, text content) */
+input,
+textarea,
+[contenteditable="true"],
+.selectable {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* iOS safe area padding utilities - enhanced */
+.safe-left {
+  padding-left: env(safe-area-inset-left, 0);
+}
+
+.safe-right {
+  padding-right: env(safe-area-inset-right, 0);
+}
+
+.safe-x {
+  padding-left: env(safe-area-inset-left, 0);
+  padding-right: env(safe-area-inset-right, 0);
+}
+
+.safe-y {
+  padding-top: env(safe-area-inset-top, 0);
+  padding-bottom: env(safe-area-inset-bottom, 0);
+}
+
+.safe-all {
+  padding-top: env(safe-area-inset-top, 0);
+  padding-right: env(safe-area-inset-right, 0);
+  padding-bottom: env(safe-area-inset-bottom, 0);
+  padding-left: env(safe-area-inset-left, 0);
+}
+
+/* Fixed bottom nav safe area */
+.fixed-bottom-safe {
+  padding-bottom: calc(env(safe-area-inset-bottom, 0) + 1rem);
+}
+
+/* Sticky header with safe area */
+.sticky-top-safe {
+  top: env(safe-area-inset-top, 0);
+}
+
+/* Height accounting for safe areas */
+.h-screen-safe {
+  height: calc(100vh - env(safe-area-inset-top, 0) - env(safe-area-inset-bottom, 0));
+}
+
+.min-h-screen-safe {
+  min-height: calc(100vh - env(safe-area-inset-top, 0) - env(safe-area-inset-bottom, 0));
+}
+
+/* iOS standalone mode detection */
+@media all and (display-mode: standalone) {
+
+  /* Additional styles for when running as installed PWA */
+  body {
+    /* Ensure we fill the entire viewport */
+    min-height: 100vh;
+    min-height: 100dvh;
+  }
+
+  /* Hide browser chrome related UI hints */
+  .browser-only {
+    display: none !important;
+  }
+}
+
+/* High-contrast tap highlighting on iOS */
+button:active,
+a:active,
+[role="button"]:active {
+  opacity: 0.8;
+}
+
+/* Prevent iOS grey highlight on tap */
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Add subtle tap feedback instead */
+.tap-highlight:active {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+/* ========================================= */
+/* Track Transition Animations (Phase 2) */
+/* ========================================= */
+
+@keyframes track-exit-left {
+  0% {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translateX(-30%) scale(0.9);
+  }
+}
+
+@keyframes track-enter-right {
+  0% {
+    opacity: 0;
+    transform: translateX(30%) scale(0.9);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+@keyframes track-crossfade {
+  0% {
+    opacity: 0;
+    filter: blur(10px);
+  }
+
+  100% {
+    opacity: 1;
+    filter: blur(0);
+  }
+}
+
+.animate-track-exit {
+  animation: track-exit-left var(--track-transition-duration) var(--ease-out) forwards;
+}
+
+.animate-track-enter {
+  animation: track-enter-right var(--track-transition-duration) var(--ease-out) forwards;
+}
+
+.animate-track-crossfade {
+  animation: track-crossfade var(--track-transition-duration) var(--ease-out) forwards;
+}
+
+/* ========================================= */
+/* AI Activity Feed Styles */
+/* ========================================= */
+
+.ai-activity-feed {
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  background: linear-gradient(135deg,
+      oklch(0.15 0.02 285 / 0.8),
+      oklch(0.12 0.02 285 / 0.9));
+  border: 1px solid oklch(1 0 0 / 0.1);
+  border-radius: var(--radius-xl);
+  overflow: hidden;
+  transition: height var(--duration-normal) var(--ease-out);
+}
+
+.ai-activity-feed.collapsed {
+  height: var(--activity-feed-collapsed);
+}
+
+.ai-activity-feed.expanded {
+  height: var(--activity-feed-height);
+}
+
+@keyframes activity-pulse {
+
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 oklch(0.65 0.25 300 / 0.4);
+  }
+
+  50% {
+    box-shadow: 0 0 12px 4px oklch(0.65 0.25 300 / 0.2);
+  }
+}
+
+.ai-activity-indicator {
+  animation: activity-pulse 2s ease-in-out infinite;
+}
+
+.ai-activity-item {
+  height: var(--activity-item-height);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0 0.75rem;
+  font-size: 0.8125rem;
+  color: var(--muted-foreground);
+  border-bottom: 1px solid oklch(1 0 0 / 0.05);
+}
+
+.ai-activity-item:last-child {
+  border-bottom: none;
+}
+
+.ai-activity-item-icon {
+  flex-shrink: 0;
+  width: 1rem;
+  height: 1rem;
+}
+
+/* ========================================= */
+/* Mobile-First Responsive Utilities */
+/* ========================================= */
+
+/* Vinyl responsive sizing */
+.vinyl-responsive {
+  width: var(--vinyl-size-mobile);
+  height: var(--vinyl-size-mobile);
+}
+
+@media (min-width: 375px) {
+  .vinyl-responsive {
+    width: var(--vinyl-size-sm);
+    height: var(--vinyl-size-sm);
+  }
+}
+
+@media (min-width: 640px) {
+  .vinyl-responsive {
+    width: var(--vinyl-size);
+    height: var(--vinyl-size);
+  }
+}
+
+/* Vinyl compact sizing (used when AI feed is expanded) */
+.vinyl-compact {
+  width: 120px;
+  height: 120px;
+}
+
+@media (min-width: 375px) {
+  .vinyl-compact {
+    width: 140px;
+    height: 140px;
+  }
+}
+
+@media (min-width: 640px) {
+  .vinyl-compact {
+    width: 180px;
+    height: 180px;
+  }
+}
+
+/* Player controls responsive */
+.player-controls-grid {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+@media (max-width: 320px) {
+  .player-controls-grid {
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+  }
+}
+
+/* Safe area enhanced utilities */
+.pb-nav-safe {
+  padding-bottom: calc(5rem + env(safe-area-inset-bottom, 0));
+}
+
+.mb-nav-safe {
+  margin-bottom: calc(5rem + env(safe-area-inset-bottom, 0));
+}
+
+/* Status toast positioning */
+.toast-container {
+  position: fixed;
+  top: calc(env(safe-area-inset-top, 0) + 0.75rem);
+  left: 0.75rem;
+  right: 0.75rem;
+  z-index: 100;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.toast-item {
+  pointer-events: auto;
+}
+
+/* Reduced motion: disable heavy animations */
+@media (prefers-reduced-motion: reduce) {
+
+  .animate-track-exit,
+  .animate-track-enter,
+  .animate-track-crossfade {
+    animation: none;
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+
+  .ai-activity-indicator {
+    animation: none;
   }
 }

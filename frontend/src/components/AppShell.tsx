@@ -1,13 +1,17 @@
 "use client"
 
+import { useEffect, useState } from "react"
 import { NavLink, Outlet, useLocation } from "react-router-dom"
-import { motion, AnimatePresence } from "framer-motion"
+import { motion } from "framer-motion"
 import { Music2, Sparkles, History, Settings } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { MiniPlayer } from "@/components/player/MiniPlayer"
 import { BackgroundPlaybackBanner } from "@/components/player/BackgroundPlaybackBanner"
+import { ResumeSessionDialog } from "@/components/ResumeSessionDialog"
+import { MoodSwitchDialog } from "@/components/MoodSwitchDialog"
 import { usePlayer } from "@/providers/PlayerProvider"
 import { durations, easings, prefersReducedMotion } from "@/lib/motion"
+import * as api from "@/lib/jamifyApi"
 
 const tabs = [
   { path: "/player", label: "Player", icon: Music2 },
@@ -20,16 +24,93 @@ export function AppShell() {
   const location = useLocation()
   const player = usePlayer()
   const reducedMotion = prefersReducedMotion()
+  const [resumableSession, setResumableSession] = useState<api.ResumableSession | null>(null)
 
   const isOnPlayerPage = location.pathname === "/player"
-  const showMiniPlayer = player.currentTrack && !isOnPlayerPage
+  const reserveMiniPlayerSpace = !isOnPlayerPage
+
+  // Check for resumable session on mount
+  useEffect(() => {
+    const checkResumable = async () => {
+      try {
+        const session = await api.checkResumableSession()
+        setResumableSession(session)
+        // Store in sessionStorage so PlayerPage knows a resume check happened
+        if (session?.resumable) {
+          sessionStorage.setItem('has_resumable_session', 'true')
+        } else {
+          sessionStorage.removeItem('has_resumable_session')
+        }
+      } catch (err) {
+        console.warn('[AppShell] Failed to check resumable session:', err)
+      } finally {
+        sessionStorage.setItem('resume_check_complete', 'true')
+      }
+    }
+
+    checkResumable()
+  }, [])
 
   const handleResume = async () => {
     await player.play()
   }
 
+  const handleResumeSession = async () => {
+    console.log('[AppShell] User chose to resume session')
+    sessionStorage.removeItem('has_resumable_session') // Clear flag so it doesn't block future auto-starts
+
+    // If stream is already started (e.g., from MoodsPage), just dismiss the dialog
+    if (player.sessionId || player.isLoading) {
+      console.log('[AppShell] Stream already started, dismissing resume dialog')
+      player.setHasUserInteracted(true)
+      return
+    }
+
+    // Mark as user interaction so "Tap to Start" overlay doesn't show
+    player.setHasUserInteracted(true)
+    await player.startStream(undefined, true)
+  }
+
+  const handleStartFresh = async () => {
+    console.log('[AppShell] User chose to start fresh')
+    sessionStorage.removeItem('has_resumable_session') // Clear flag so it doesn't block future auto-starts
+
+    // If stream is already started (e.g., from MoodsPage), just dismiss the dialog
+    if (player.sessionId || player.isLoading) {
+      console.log('[AppShell] Stream already started, dismissing resume dialog')
+      player.setHasUserInteracted(true)
+      return
+    }
+
+    // Mark as user interaction so "Tap to Start" overlay doesn't show
+    player.setHasUserInteracted(true)
+    await player.startStream(undefined, false)
+  }
+
   return (
-    <div className="min-h-screen flex flex-col bg-background">
+    <div className="min-h-screen h-[var(--app-height)] overflow-hidden flex flex-col bg-background">
+      {/* Resume session dialog */}
+      <ResumeSessionDialog
+        resumableSession={resumableSession}
+        onResume={handleResumeSession}
+        onStartFresh={handleStartFresh}
+      />
+
+      {/* Mood switch dialog */}
+      <MoodSwitchDialog
+        open={player.moodSwitchDialog.open}
+        switchInfo={player.moodSwitchDialog.moodId ? {
+          moodId: player.moodSwitchDialog.moodId,
+          moodName: player.moodSwitchDialog.moodName,
+          moodColor: player.moodSwitchDialog.moodColor,
+          currentTrack: player.moodSwitchDialog.savedTrack || undefined,
+          position: player.moodSwitchDialog.savedPosition,
+        } : null}
+        onResume={() => player.confirmMoodSwitch(true)}
+        onStartFresh={() => player.confirmMoodSwitch(false)}
+        onCancel={player.cancelMoodSwitch}
+      />
+
       {/* Background playback banner for iOS */}
       <BackgroundPlaybackBanner
         wasPausedByBackground={player.wasPausedByBackground}
@@ -41,29 +122,29 @@ export function AppShell() {
       {/* Main content area with safe area padding and page transitions */}
       <main
         className={cn(
-          "flex-1 overflow-auto",
+          "flex-1 min-h-0 overflow-hidden",
           "pt-safe-top",
-          // Add extra padding when mini player is visible
-          showMiniPlayer ? "pb-32" : "pb-20",
+          // Add extra padding when mini player is visible, none for player page
+          reserveMiniPlayerSpace ? "pb-32" : "pb-0",
         )}
       >
         {reducedMotion ? (
-          <Outlet />
+          <div className="h-full">
+            <Outlet />
+          </div>
         ) : (
-          <AnimatePresence mode="wait" initial={false}>
-            <motion.div
-              key={location.pathname}
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -20 }}
-              transition={{
-                duration: durations.fast / 1000,
-                ease: easings.out,
-              }}
-            >
-              <Outlet />
-            </motion.div>
-          </AnimatePresence>
+          <motion.div
+            key={location.pathname}
+            initial={{ opacity: 0, x: 12 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{
+              duration: durations.fast / 1000,
+              ease: easings.out,
+            }}
+            className="h-full"
+          >
+            <Outlet />
+          </motion.div>
         )}
       </main>
 

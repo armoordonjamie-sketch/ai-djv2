@@ -25,11 +25,83 @@ from backend_v2.db.session import async_session_factory
 from backend_v2.models.user import User
 from backend_v2.models.user_profile import UserProfile
 from backend_v2.models.mood import Mood, MoodProfile
+from backend_v2.models.spotify_context import SpotifyUserContext
 from backend_v2.orchestration.events import get_event_emitter
 from backend_v2.schemas.status_events import StatusCategory, StatusStep
 from backend_v2.utils.time import utc_now
+from backend_v2.integrations.openrouter import get_openrouter_client
 
 logger = logging.getLogger("ai-dj.mood-generator")
+
+
+async def generate_custom_mood_names(
+    display_name: Optional[str],
+    genres: List[str],
+    artists: List[str],
+    personality: str,
+) -> List[str]:
+    """Generate 5 personalized mood names using LLM based on user's onboarding data.
+    
+    Returns list of 5 custom names, or default template names if LLM fails.
+    """
+    default_names = ["Flow", "Energy", "Chill", "Party", "Late Night"]
+    
+    client = get_openrouter_client()
+    if not client.enabled:
+        logger.warning("OpenRouter not enabled, using default mood names")
+        return default_names
+    
+    system_prompt = """You are naming 5 music mood presets for a user. Based on their preferences, create SHORT, CREATIVE, UNIQUE names (1-2 words max) that feel personal and fun.
+
+Rules:
+- Each name should be 1-2 words max
+- Be creative and unique - avoid generic names like "Chill" or "Energy"
+- Names should evoke the mood category they represent
+- Consider the user's music taste when naming
+
+Respond with JSON only: {"names": ["name1", "name2", "name3", "name4", "name5"]}"""
+
+    user_prompt = f"""Create personalized mood names for this user:
+
+Name: {display_name or 'User'}
+Favorite genres: {', '.join(genres[:5]) if genres else 'Various'}  
+Favorite artists: {', '.join(artists[:5]) if artists else 'Various'}
+DJ personality: {personality}
+
+Create names for these 5 mood categories (in order):
+1. Balanced everyday listening (default mood)
+2. High energy workout/motivation
+3. Relaxed/focus chill vibes
+4. Party/celebration/dancing
+5. Late night moody/introspective
+
+Give me 5 creative names that match their vibe."""
+
+    try:
+        result = await client.chat_completion(
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=0.9,  # Higher creativity
+            json_mode=True,
+            use_lite_model=True,
+            session_id=None,  # Standalone generation call
+        )
+        
+        if result and result.get('parsed'):
+            names = result['parsed'].get('names', [])
+            if len(names) == 5 and all(isinstance(n, str) and len(n) > 0 for n in names):
+                logger.info(f"🎨 Generated custom mood names: {names}")
+                return names
+            else:
+                logger.warning(f"LLM returned invalid names format: {names}")
+        
+    except Exception as e:
+        logger.error(f"Failed to generate custom mood names: {e}")
+    
+    logger.info("Using default mood names as fallback")
+    return default_names
 
 
 class GenerationStatus(str, Enum):
@@ -282,7 +354,59 @@ async def generate_personalized_moods(user_id: str) -> None:
                 except json.JSONDecodeError:
                     pass
             
+            artists = []
+            if profile and profile.favorite_artists:
+                try:
+                    artists = json.loads(profile.favorite_artists)
+                except json.JSONDecodeError:
+                    pass
+            
+            # Load Spotify context for enhanced personalization
+            spotify_result = await db.execute(
+                select(SpotifyUserContext).where(SpotifyUserContext.user_id == user_id)
+            )
+            spotify_context = spotify_result.scalar_one_or_none()
+            
+            # Enhance genres and artists with Spotify data
+            if spotify_context:
+                logger.info(f"Using Spotify data to enhance mood generation for user {user_id}")
+                
+                # Add top artists from Spotify (medium term = last 6 months)
+                try:
+                    if spotify_context.top_artists_json:
+                        top_artists_data = json.loads(spotify_context.top_artists_json)
+                        medium_term_artists = top_artists_data.get("medium_term", [])
+                        # Add top 10 artists from Spotify
+                        for artist_data in medium_term_artists[:10]:
+                            artist_name = artist_data.get("name")
+                            if artist_name and artist_name not in artists:
+                                artists.append(artist_name)
+                except json.JSONDecodeError:
+                    pass
+                
+                # Enhance genres with Spotify genre analysis
+                try:
+                    if spotify_context.genres_analysis_json:
+                        genre_analysis = json.loads(spotify_context.genres_analysis_json)
+                        primary_genres = genre_analysis.get("primary_genres", [])
+                        # Add primary genres from Spotify
+                        for genre in primary_genres[:5]:
+                            if genre and genre not in genres:
+                                genres.append(genre)
+                except json.JSONDecodeError:
+                    pass
+            
             dj_personality = profile.dj_personality if profile else "casual_funny"
+            display_name = profile.display_name if profile else None
+            
+            # Generate custom mood names using LLM
+            progress.current_step = "Generating your personalized mood names..."
+            custom_names = await generate_custom_mood_names(
+                display_name=display_name,
+                genres=genres,
+                artists=artists,
+                personality=dj_personality,
+            )
             
             # Delete existing moods (fresh start)
             existing = await db.execute(
@@ -294,17 +418,28 @@ async def generate_personalized_moods(user_id: str) -> None:
             
             # Generate each mood
             for i, template in enumerate(MOOD_TEMPLATES):
-                progress.current_step = f"Creating {template.name} mood..."
+                # Use custom name if available, otherwise fallback to template name
+                mood_name = custom_names[i] if i < len(custom_names) else template.name
+                progress.current_step = f"Creating {mood_name} mood..."
                 progress.moods_created = i
                 
                 # Merge user genres with mood-specific genre seeds
                 # User genres are still respected, but mood adds its own flavor
                 mood_genres = list(set((genres or []) + template.genre_seeds))
                 
-                # Create the mood
+                # Use Spotify top artists as example artists if available
+                example_artists = template.example_artists
+                if spotify_context and artists:
+                    # Use user's actual top artists instead of template examples
+                    example_artists = artists[:10]  # Top 10 from Spotify
+                elif artists:
+                    # Use onboarding artists if no Spotify
+                    example_artists = artists[:10]
+                
+                # Create the mood with custom name
                 mood = Mood(
                     user_id=user_id,
-                    name=template.name,
+                    name=mood_name,
                     color=template.color,
                     energy_target=template.energy_target,
                     valence_target=template.valence_target,
@@ -315,7 +450,7 @@ async def generate_personalized_moods(user_id: str) -> None:
                     genre_seeds_json=json.dumps(template.genre_seeds),
                     vibe_keywords_json=json.dumps(template.vibe_keywords),
                     avoid_genres_json=json.dumps(template.avoid_genres),
-                    example_artists_json=json.dumps(template.example_artists),
+                    example_artists_json=json.dumps(example_artists),
                     intro_personality=template.intro_personality,
                     era_hint=template.era_hint,
                     dj_personality=dj_personality,
@@ -340,6 +475,20 @@ async def generate_personalized_moods(user_id: str) -> None:
             
             await db.commit()
             
+            # Enrich all moods with LLM-generated personalized artists
+            for mood_id in progress.created_mood_ids:
+                try:
+                    from backend_v2.services.mood_enrichment import enrich_mood_with_llm
+                    mood_result = await db.execute(select(Mood).where(Mood.id == mood_id))
+                    mood = mood_result.scalar_one_or_none()
+                    if mood:
+                        await enrich_mood_with_llm(db, mood, profile)
+                        logger.info(f"Enriched mood {mood.name} with LLM-generated artists")
+                except Exception as e:
+                    logger.warning(f"LLM enrichment failed for mood {mood_id}: {e}")
+            
+            await db.commit()
+            
             progress.moods_created = len(MOOD_TEMPLATES)
             progress.current_step = "Generating intros..."
             
@@ -352,42 +501,43 @@ async def generate_personalized_moods(user_id: str) -> None:
                 progress=0.7,
             )
             
-            # Pre-generate intros SEQUENTIALLY (not parallel) to avoid:
-            # 1. Download concurrency lock contention
-            # 2. YouTube rate limiting
-            # 3. Duplicate song selection
+            # Pre-generate intros ONLY for the DEFAULT mood to speed up onboarding
+            # Other moods will get intros generated on-the-fly when first played
             from backend_v2.orchestration.generation import generate_mood_intro
             from sqlalchemy import update
             
-            for idx, mood_id in enumerate(progress.created_mood_ids):
+            # Only generate intro for the default mood (first one, index 0)
+            default_mood_id = progress.created_mood_ids[0] if progress.created_mood_ids else None
+            
+            if default_mood_id:
                 try:
                     # Get mood name for status message
                     mood_result = await db.execute(
-                        select(Mood).where(Mood.id == mood_id)
+                        select(Mood).where(Mood.id == default_mood_id)
                     )
                     mood = mood_result.scalar_one_or_none()
-                    mood_name = mood.name if mood else f"Mood {idx+1}"
+                    mood_name = mood.name if mood else "Default"
                     
-                    logger.info(f"Generating intro {idx+1}/{len(progress.created_mood_ids)} for {mood_name}")
+                    logger.info(f"Generating intro for default mood: {mood_name}")
                     
                     # Emit status for this specific intro
                     await emitter.emit_status(
                         user_id=user_id,
                         category=StatusCategory.ONBOARDING,
                         step=StatusStep.INTRO_GENERATING,
-                        user_message=f"Creating {mood_name} intro ({idx+1}/{len(progress.created_mood_ids)})...",
-                        progress=0.7 + (0.3 * (idx / len(progress.created_mood_ids))),
+                        user_message=f"Creating {mood_name} intro...",
+                        progress=0.8,
                     )
                     
                     # Create dedicated session for this task
                     async with async_session_factory() as session:
-                        result = await generate_mood_intro(session, user_id, mood_id)
+                        result = await generate_mood_intro(session, user_id, default_mood_id)
                         
                         if result:
                             # Save path to DB
                             await session.execute(
                                 update(Mood)
-                                .where(Mood.id == mood_id)
+                                .where(Mood.id == default_mood_id)
                                 .values(
                                     intro_segment_path=result['path'],
                                     intro_song_uuid=result['song_uuid']
@@ -395,7 +545,7 @@ async def generate_personalized_moods(user_id: str) -> None:
                             )
                             await session.commit()
                             
-                            progress.intros_ready += 1
+                            progress.intros_ready = 1
                             logger.info(f"Intro ready for {mood_name} (song: {result['song_uuid']})")
                             
                             # Emit completion for this intro
@@ -403,14 +553,14 @@ async def generate_personalized_moods(user_id: str) -> None:
                                 user_id=user_id,
                                 category=StatusCategory.ONBOARDING,
                                 step=StatusStep.INTRO_GENERATING,
-                                user_message=f"{mood_name} intro ready! ({idx+1}/{len(progress.created_mood_ids)})",
-                                progress=0.7 + (0.3 * ((idx + 1) / len(progress.created_mood_ids))),
+                                user_message=f"{mood_name} intro ready!",
+                                progress=0.95,
                             )
                         else:
                             logger.warning(f"Intro generation returned None for {mood_name}")
                             
                 except Exception as e:
-                    logger.error(f"Intro generation failed for mood {mood_id}: {e}")
+                    logger.error(f"Intro generation failed for default mood: {e}")
                     import traceback
                     traceback.print_exc()
             

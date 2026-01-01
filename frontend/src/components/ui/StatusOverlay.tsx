@@ -26,6 +26,28 @@ const overlayMessages: Partial<Record<StatusStep, { title: string; subtitle: str
   starting: { title: "Starting playback", subtitle: "Just a moment..." },
 }
 
+const stepLabelMap: Partial<Record<StatusStep, string>> = {
+  planning: "Analyzing",
+  selecting_track: "Selecting",
+  downloading_track: "Downloading",
+  mixing: "Mixing",
+  switching_mood: "Switching mood",
+  buffering: "Buffering",
+  recovering: "Reconnecting",
+  failed: "Failed",
+  starting: "Starting",
+}
+
+const tipMap: Partial<Record<StatusStep, string>> = {
+  planning: "Scanning your likes and recent listens.",
+  selecting_track: "Balancing energy, mood, and variety.",
+  downloading_track: "Optimizing audio for smooth playback.",
+  mixing: "Building a seamless transition.",
+  buffering: "Getting the stream ready to play.",
+  recovering: "Trying to reconnect to your session.",
+  starting: "Warming up the stream.",
+}
+
 /**
  * Fullscreen overlay for major state changes (mood switching, initial loading, errors).
  * Only shows during significant transitions, not during normal playback.
@@ -86,6 +108,8 @@ export function StatusOverlay({
   }
 
   const { title, subtitle } = getMessages()
+  const stepLabel = status ? stepLabelMap[status.step] : "Loading"
+  const tip = status ? tipMap[status.step] : undefined
 
   return (
     <AnimatePresence>
@@ -102,11 +126,24 @@ export function StatusOverlay({
           )}
         >
           <motion.div
-            initial={{ scale: 0.9, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            transition={{ delay: 0.1, type: "spring", stiffness: 200 }}
-            className="flex flex-col items-center gap-8 text-center px-8 max-w-sm"
+            initial={{ scale: 0.96, opacity: 0, y: 8 }}
+            animate={{ scale: 1, opacity: 1, y: 0 }}
+            transition={{ delay: 0.08, type: "spring", stiffness: 220, damping: 22 }}
+            className="relative flex flex-col items-center gap-7 text-center px-8 max-w-sm"
           >
+            <div className="absolute inset-0 -z-10 rounded-3xl bg-gradient-to-b from-white/5 via-transparent to-transparent" />
+
+            {/* Status chip */}
+            <motion.div
+              initial={{ opacity: 0, y: -6 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.15 }}
+              className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs uppercase tracking-[0.25em] text-muted-foreground"
+            >
+              <span className="h-1.5 w-1.5 rounded-full bg-primary" />
+              {stepLabel}
+            </motion.div>
+
             {/* Icon with animated rings */}
             <div className="relative">
               {getIcon()}
@@ -127,6 +164,9 @@ export function StatusOverlay({
             <div className="space-y-2">
               <h2 className="text-xl font-semibold text-foreground">{title}</h2>
               <p className="text-sm text-muted-foreground">{subtitle}</p>
+              {tip && (
+                <p className="text-xs text-muted-foreground/80">{tip}</p>
+              )}
             </div>
 
             {status?.progress !== undefined && status.progress !== null && (
@@ -135,12 +175,12 @@ export function StatusOverlay({
                   <motion.div
                     className="h-full gradient-bg rounded-full"
                     initial={{ width: 0 }}
-                    animate={{ width: `${status.progress * 100}%` }}
-                    transition={{ duration: 0.3 }}
+                    animate={{ width: `${Math.min(1, Math.max(0, status.progress)) * 100}%` }}
+                    transition={{ duration: 0.35 }}
                   />
                 </div>
                 <p className="text-xs text-muted-foreground tabular-nums">
-                  {Math.round(status.progress * 100)}% complete
+                  {Math.round(Math.min(1, Math.max(0, status.progress)) * 100)}% complete
                 </p>
               </div>
             )}
@@ -149,7 +189,7 @@ export function StatusOverlay({
               <motion.div
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.5 }}
+                transition={{ delay: 0.4 }}
                 className="w-full max-w-xs"
               >
                 <p className="text-xs text-muted-foreground mb-3">Coming up:</p>
@@ -164,7 +204,12 @@ export function StatusOverlay({
             )}
 
             {status?.payload?.track_title && (
-              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-xs">
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.25 }}
+                className="w-full max-w-xs"
+              >
                 <p className="text-xs text-muted-foreground mb-3">Next up:</p>
                 <div className="flex items-center gap-3 p-3 rounded-lg bg-surface-2">
                   {status.payload.artwork_url ? (
@@ -191,10 +236,9 @@ export function StatusOverlay({
               <motion.button
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
-                transition={{ delay: 0.3 }}
+                transition={{ delay: 0.2 }}
                 onClick={() => window.location.reload()}
-                className="px-6 py-2 rounded-full gradient-bg text-white font-medium text-sm
-                                           hover:opacity-90 transition-opacity"
+                className="px-6 py-2 rounded-full gradient-bg text-white font-medium text-sm hover:opacity-90 transition-opacity"
               >
                 Try Again
               </motion.button>

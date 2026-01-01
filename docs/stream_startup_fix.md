@@ -109,3 +109,14 @@ Tests verify:
 | `pipeline.py` | Refactored `_segment_feeder` startup loop with defer/bounded modes |
 | `tests/test_bounded_silence_startup.py` | New test file |
 | `docs/stream_startup_fix.md` | This documentation |
+
+## Recent Improvements (Dec 29, 2024)
+
+### Issue: Defer Mode Polling Delay
+**Problem:** In defer mode, the segment feeder was checking the queue every 0.5 seconds, causing a noticeable ~0.5s delay before playback started, even when pre-generated intro segments were ready almost immediately.
+
+**Fix:** Reduced the polling interval in defer mode from 0.5s to 0.05s (50ms). This makes the feeder much more responsive to segments becoming available, reducing the maximum delay from ~500ms to ~50ms.
+
+**Location:** `pipeline.py` line 423
+
+**Result:** Nearly instantaneous playback when using pre-generated mood intros (delay reduced by ~90%).

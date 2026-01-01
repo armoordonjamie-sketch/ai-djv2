@@ -1,0 +1,947 @@
+{
+  "agent_id": "agent_3901kde4az3zfh18ca78pnhykcy1",
+  "name": "Jamify Onboarding",
+  "conversation_config": {
+    "asr": {
+      "quality": "high",
+      "provider": "elevenlabs",
+      "user_input_audio_format": "pcm_16000",
+      "keywords": []
+    },
+    "turn": {
+      "turn_timeout": 10.0,
+      "initial_wait_time": null,
+      "silence_end_call_timeout": 30.0,
+      "soft_timeout_config": {
+        "timeout_seconds": -1.0,
+        "message": "Hhmmmm...yeah give me a second..."
+      },
+      "mode": "turn",
+      "turn_eagerness": "normal"
+    },
+    "tts": {
+      "model_id": "eleven_turbo_v2",
+      "voice_id": "aD6riP1btT197c6dACmy",
+      "supported_voices": [],
+      "suggested_audio_tags": [],
+      "agent_output_audio_format": "pcm_16000",
+      "optimize_streaming_latency": 3,
+      "stability": 0.5,
+      "speed": 1.0,
+      "similarity_boost": 0.8,
+      "text_normalisation_type": "system_prompt",
+      "pronunciation_dictionary_locators": []
+    },
+    "conversation": {
+      "text_only": false,
+      "max_duration_seconds": 600,
+      "client_events": [
+        "audio",
+        "interruption",
+        "agent_response",
+        "user_transcript",
+        "agent_response_correction",
+        "agent_tool_response"
+      ],
+      "monitoring_enabled": false,
+      "monitoring_events": [
+        "user_transcript",
+        "agent_response",
+        "agent_response_correction"
+      ]
+    },
+    "language_presets": {},
+    "vad": {
+      "background_voice_detection": false
+    },
+    "agent": {
+      "first_message": "Hey! I'm about to be your DJ \u2014 what's the last song that got stuck in your head?",
+      "language": "en",
+      "hinglish_mode": false,
+      "dynamic_variables": {
+        "dynamic_variable_placeholders": {
+          "user_id": "placeholder_user_id"
+        }
+      },
+      "disable_first_message_interruptions": false,
+      "prompt": {
+        "prompt": "# Who You Are\nYou're the Jamify DJ - a music-loving friend who genuinely wants to know someone's vibe. \nYou have excellent taste, quick wit, and real curiosity about people.\n\n# Your Vibe\n- Warm, not scripted. Like chatting at a party, not filling out a form.\n- Quick jokes are welcome, but never at someone's expense.\n- When someone shares something personal, acknowledge it genuinely.\n- Keep responses SHORT - 1-2 sentences max. This is a voice conversation!\n\n# BE PROACTIVE WITH MUSIC!\nYour job is to DISCOVER their taste through MUSIC, not questions. When in doubt, play something!\n\n**The Golden Rule**: When they mention an artist, IMMEDIATELY:\n1. Look them up with search_artist_music\n2. Pick their best track and PLAY IT with play_song_preview\n3. Ask \"You feeling this?\" or \"This your vibe?\"\n4. Their reaction tells you everything - adjust from there\n\n**Explore Deeply**:\n- Use `get_mood_vibes` if they mention a feeling (\"I want something chill\")\n- Use `get_era_hits` if they mention a time (\"I love the 90s\", \"old school\")\n- Use `explore_genre` if they mention a style (\"Deep House\", \"Jazz\")\n- Use `quick_vibe_check` early on to test contrasting styles (\"Do you prefer pop or rock?\")\n\n**Keep the Music Flowing**:\n- Play 2-3 previews minimum during the conversation\n- Each preview = instant feedback on their taste\n- Much better than asking \"what genres do you like?\"\n\n# How The Conversation Flows\n1. They mention something \u2192 SEARCH IT (using the right tool)\n2. Find a good track \u2192 PLAY IT  \n3. Get their reaction \u2192 EXPLORE MORE or PIVOT\n4. Repeat until you've got their vibe locked\n\nDON'T ask checklist questions like \"What genres do you like?\" \nDO play music and read their reactions: \"Oh you're vibing with this!\"\n\n# What You're Learning (Through Music, NOT Questions)\nEssential:\n- Their name (let it come up naturally or ask casually)\n- What makes them nod along (play previews, watch reactions)\n- What makes them go \"nah\" (equally valuable info)\n\nThrough playing music you'll NATURALLY learn:\n- Energy preference: Do they vibe with HIGH ENERGY bangers or CHILL tracks? \n  (Set energy_preference: \"high_energy\" | \"low_energy\" | \"mixed\")\n- Tempo preference: Do they prefer FAST-paced or SLOWER music?\n  (Set tempo_preference: \"fast\" | \"slow\" | \"mixed\")\n- Era preference: Do they lean toward NEW releases or CLASSIC hits?\n  (Set era_preference: \"new_releases\" | \"classics\" | \"mixed\")\n- Genre range (pop? rock? electronic? mix?)\n- Favorite songs: Note the SPECIFIC SONG TITLES they love - super valuable!\n- Listening contexts: When do they listen? (workout, focus, party, commute, relaxing)\n\n# LEARNING FROM PREVIEW REACTIONS\nWhen you play a preview, pay attention to:\n- HIGH ENERGY reaction (\"oh I love that beat!\") \u2192 energy_preference = \"high_energy\"\n- CHILL reaction (\"that's so smooth\") \u2192 energy_preference = \"low_energy\"\n- Vibes with FAST tempo \u2192 tempo_preference = \"fast\"\n- Vibes with SLOWER tempo \u2192 tempo_preference = \"slow\"\n- Loves throwbacks/classics \u2192 era_preference = \"classics\"\n- Loves recent hits/new stuff \u2192 era_preference = \"new_releases\"\n\nASK NATURALLY about context: \"When do you usually listen - working out? Chilling at home?\"\nThis helps us pick the right vibe for different moments!\n\n# When To Wrap Up\nAfter 2-3 song previews with good reactions:\n- \"Alright, I think I've got your vibe - you're into [summary]. Ready to start your mix?\"\n- If yes: call submit_onboarding_profile with everything you learned\n- Success: \"You're locked in - let's go!\"\n\n# Rules\n- NEVER say \"onboarding\" - say \"getting your vibe\" or \"tuning your mix\"  \n- NEVER read JSON or technical stuff out loud\n- NEVER ask for address, phone, email, DOB\n- If a preview fails: \"That one's being shy, let me try another...\" and pick different track\n- ALWAYS play music - it's your superpower!\n- Remember to note specific SONG TITLES they love, not just artists!\n\n# Tool Output Notes\nWhen calling submit_onboarding_profile:\n- user_id: auto-filled from dynamic variable\n- Arrays (favorite_genres, favorite_artists, favorite_songs, no_go): Use [] if none mentioned\n- IMPORTANT: favorite_songs = specific song titles they loved (e.g. [\"Blinding Lights\", \"Bad Guy\"])\n- explicit_lyrics: \"ok\" | \"avoid\" | \"depends\" (default \"ok\")\n- dj_personality: \"casual_funny\" | \"minimal_talk\" | \"hype_energetic\" | \"light_roast\" | \"more_talk_between_songs\"\n- energy_preference: \"high_energy\" | \"low_energy\" | \"mixed\" (INFER from preview reactions!)\n- tempo_preference: \"fast\" | \"slow\" | \"mixed\" (INFER from preview reactions!)\n- era_preference: \"new_releases\" | \"classics\" | \"mixed\" (INFER from what they vibed with!)\n- listening_contexts: [\"workout\", \"focus\", \"party\", \"commute\", \"relaxing\", etc.] (if they mentioned when they listen)\n- raw_context: Write 2-3 sentences capturing their full vibe naturally\n- demographics: Only include if explicitly mentioned by user\n",
+        "llm": "gemini-2.0-flash",
+        "reasoning_effort": null,
+        "thinking_budget": null,
+        "temperature": 0.7,
+        "max_tokens": -1,
+        "tool_ids": [
+          "tool_4201kdnchy8tfdnrwg42t4x1e93k",
+          "tool_8601kde4azepfsxvrhvt0zccjekf",
+          "tool_4901kdnbdhsvfyftka9tm9y3tcj5",
+          "tool_2701kdnbdhswe4gs46nkxfq3f6x1",
+          "tool_1801kdnbdhsxe1wsprntwy4qe8g3",
+          "tool_5001kdnbdhsyfhzsfz7nd6y6v3qk",
+          "tool_3101kdnbdhsze909kw1bmpzeb5v8",
+          "tool_9501kdnbdht0ey187gezhh0sjcnp",
+          "tool_9201kdnbdht1fecvmmvhmk31q804"
+        ],
+        "built_in_tools": {
+          "end_call": null,
+          "language_detection": null,
+          "transfer_to_agent": null,
+          "transfer_to_number": null,
+          "skip_turn": null,
+          "play_keypad_touch_tone": null,
+          "voicemail_detection": null
+        },
+        "mcp_server_ids": [],
+        "native_mcp_server_ids": [],
+        "knowledge_base": [],
+        "custom_llm": null,
+        "ignore_default_personality": false,
+        "rag": {
+          "enabled": false,
+          "embedding_model": "e5_mistral_7b_instruct",
+          "max_vector_distance": 0.6,
+          "max_documents_length": 50000,
+          "max_retrieved_rag_chunks_count": 20,
+          "query_rewrite_prompt_override": null
+        },
+        "timezone": null,
+        "backup_llm_config": {
+          "preference": "default"
+        },
+        "tools": [
+          {
+            "type": "webhook",
+            "name": "submit_onboarding_profile",
+            "description": "Submit the user's music preferences and complete onboarding. Call this when you have gathered enough information about their music taste.",
+            "response_timeout_secs": 20,
+            "disable_interruptions": false,
+            "force_pre_tool_speech": false,
+            "assignments": [],
+            "tool_call_sound": null,
+            "tool_call_sound_behavior": "auto",
+            "dynamic_variables": {
+              "dynamic_variable_placeholders": {}
+            },
+            "execution_mode": "immediate",
+            "api_schema": {
+              "request_headers": {
+                "X-Onboard-Secret": "cND_QgeAz2wgRhaTu3fVAgdcXXYv0GSZvzHDOO-Jcp8"
+              },
+              "url": "https://jamify.jamiearmoordon.co.uk/api/v1/onboard/submit",
+              "method": "POST",
+              "path_params_schema": {},
+              "query_params_schema": null,
+              "request_body_schema": {
+                "type": "object",
+                "required": [
+                  "user_id",
+                  "display_name",
+                  "raw_context"
+                ],
+                "description": "",
+                "properties": {
+                  "user_id": {
+                    "type": "string",
+                    "description": "",
+                    "enum": null,
+                    "is_system_provided": false,
+                    "dynamic_variable": "user_id",
+                    "constant_value": ""
+                  },
+                  "display_name": {
+                    "type": "string",
+                    "description": "What the user wants to be called",
+                    "enum": null,
+                    "is_system_provided": false,
+                    "dynamic_variable": "",
+                    "constant_value": ""
+                  },
+                  "favorite_genres": {
+                    "type": "array",
+                    "description": "List of music genres the user enjoys",
+                    "items": {
+                      "type": "string",
+                      "description": "A genre name",
+                      "enum": null,
+                      "is_system_provided": false,
+                      "dynamic_variable": "",
+                      "constant_value": ""
+                    }
+                  },
+                  "favorite_artists": {
+                    "type": "array",
+                    "description": "List of artists the user mentioned liking",
+                    "items": {
+                      "type": "string",
+                      "description": "An artist name",
+                      "enum": null,
+                      "is_system_provided": false,
+                      "dynamic_variable": "",
+                      "constant_value": ""
+                    }
+                  },
+                  "favorite_songs": {
+                    "type": "array",
+                    "description": "IMPORTANT: List of specific song TITLES the user loves (e.g. 'Blinding Lights', 'Bad Guy')",
+                    "items": {
+                      "type": "string",
+                      "description": "A song title (not artist name)",
+                      "enum": null,
+                      "is_system_provided": false,
+                      "dynamic_variable": "",
+                      "constant_value": ""
+                    }
+                  },
+                  "no_go": {
+                    "type": "array",
+                    "description": "Artists or genres to avoid",
+                    "items": {
+                      "type": "string",
+                      "description": "An artist or genre to avoid",
+                      "enum": null,
+                      "is_system_provided": false,
+                      "dynamic_variable": "",
+                      "constant_value": ""
+                    }
+                  },
+                  "explicit_lyrics": {
+                    "type": "string",
+                    "description": "Whether explicit lyrics are okay: ok, avoid, or depends",
+                    "enum": null,
+                    "is_system_provided": false,
+                    "dynamic_variable": "",
+                    "constant_value": ""
+                  },
+                  "dj_personality": {
+                    "type": "string",
+                    "description": "The DJ personality the user prefers",
+                    "enum": null,
+                    "is_system_provided": false,
+                    "dynamic_variable": "",
+                    "constant_value": ""
+                  },
+                  "energy_preference": {
+                    "type": "string",
+                    "description": "Energy preference INFERRED from preview reactions: high_energy (loves bangers), low_energy (prefers chill), mixed",
+                    "enum": null,
+                    "is_system_provided": false,
+                    "dynamic_variable": "",
+                    "constant_value": ""
+                  },
+                  "tempo_preference": {
+                    "type": "string",
+                    "description": "Tempo preference INFERRED from preview reactions: fast (upbeat), slow (laid-back), mixed",
+                    "enum": null,
+                    "is_system_provided": false,
+                    "dynamic_variable": "",
+                    "constant_value": ""
+                  },
+                  "era_preference": {
+                    "type": "string",
+                    "description": "Era preference INFERRED from preview reactions: new_releases (recent hits), classics (older/throwback), mixed",
+                    "enum": null,
+                    "is_system_provided": false,
+                    "dynamic_variable": "",
+                    "constant_value": ""
+                  },
+                  "listening_contexts": {
+                    "type": "array",
+                    "description": "When/where user listens to music: workout, focus, party, commute, relaxing, cooking, etc.",
+                    "items": {
+                      "type": "string",
+                      "description": "A listening context",
+                      "enum": null,
+                      "is_system_provided": false,
+                      "dynamic_variable": "",
+                      "constant_value": ""
+                    }
+                  },
+                  "raw_context": {
+                    "type": "string",
+                    "description": "A natural summary of the user's music preferences and vibe",
+                    "enum": null,
+                    "is_system_provided": false,
+                    "dynamic_variable": "",
+                    "constant_value": ""
+                  },
+                  "age_range": {
+                    "type": "string",
+                    "description": "User's age range if mentioned (e.g. '20s', '30-40')",
+                    "enum": null,
+                    "is_system_provided": false,
+                    "dynamic_variable": "",
+                    "constant_value": ""
+                  },
+                  "location": {
+                    "type": "string",
+                    "description": "User's location if mentioned",
+                    "enum": null,
+                    "is_system_provided": false,
+                    "dynamic_variable": "",
+                    "constant_value": ""
+                  },
+                  "occupation": {
+                    "type": "string",
+                    "description": "User's occupation if mentioned",
+                    "enum": null,
+                    "is_system_provided": false,
+                    "dynamic_variable": "",
+                    "constant_value": ""
+                  }
+                }
+              },
+              "content_type": "application/json",
+              "auth_connection": null
+            }
+          },
+          {
+            "type": "webhook",
+            "name": "search_artist_music",
+            "description": "Search for an artist and get their top tracks. Use this when the user mentions an artist they like.",
+            "response_timeout_secs": 30,
+            "disable_interruptions": false,
+            "force_pre_tool_speech": false,
+            "assignments": [],
+            "tool_call_sound": null,
+            "tool_call_sound_behavior": "auto",
+            "dynamic_variables": {
+              "dynamic_variable_placeholders": {}
+            },
+            "execution_mode": "immediate",
+            "api_schema": {
+              "request_headers": {
+                "X-Onboard-Secret": "cND_QgeAz2wgRhaTu3fVAgdcXXYv0GSZvzHDOO-Jcp8"
+              },
+              "url": "https://jamify.jamiearmoordon.co.uk/api/v1/deezer/artist-search",
+              "method": "POST",
+              "path_params_schema": {},
+              "query_params_schema": null,
+              "request_body_schema": {
+                "type": "object",
+                "required": [
+                  "artist_name"
+                ],
+                "description": "",
+                "properties": {
+                  "artist_name": {
+                    "type": "string",
+                    "description": "The name of the artist to search for",
+                    "enum": null,
+                    "is_system_provided": false,
+                    "dynamic_variable": "",
+                    "constant_value": ""
+                  }
+                }
+              },
+              "content_type": "application/json",
+              "auth_connection": null
+            }
+          },
+          {
+            "type": "webhook",
+            "name": "get_related_artists",
+            "description": "Get artists similar to a given artist. Use this to explore related music.",
+            "response_timeout_secs": 30,
+            "disable_interruptions": false,
+            "force_pre_tool_speech": false,
+            "assignments": [],
+            "tool_call_sound": null,
+            "tool_call_sound_behavior": "auto",
+            "dynamic_variables": {
+              "dynamic_variable_placeholders": {}
+            },
+            "execution_mode": "immediate",
+            "api_schema": {
+              "request_headers": {
+                "X-Onboard-Secret": "cND_QgeAz2wgRhaTu3fVAgdcXXYv0GSZvzHDOO-Jcp8"
+              },
+              "url": "https://jamify.jamiearmoordon.co.uk/api/v1/deezer/related-artists",
+              "method": "POST",
+              "path_params_schema": {},
+              "query_params_schema": null,
+              "request_body_schema": {
+                "type": "object",
+                "required": [
+                  "artist_name"
+                ],
+                "description": "",
+                "properties": {
+                  "artist_name": {
+                    "type": "string",
+                    "description": "The name of the artist to find related artists for",
+                    "enum": null,
+                    "is_system_provided": false,
+                    "dynamic_variable": "",
+                    "constant_value": ""
+                  },
+                  "artist_id": {
+                    "type": "integer",
+                    "description": "Optional Deezer artist ID if known",
+                    "enum": null,
+                    "is_system_provided": false,
+                    "dynamic_variable": "",
+                    "constant_value": ""
+                  }
+                }
+              },
+              "content_type": "application/json",
+              "auth_connection": null
+            }
+          },
+          {
+            "type": "webhook",
+            "name": "search_tracks",
+            "description": "Search for specific tracks by query. Use when user mentions a specific song name.",
+            "response_timeout_secs": 30,
+            "disable_interruptions": false,
+            "force_pre_tool_speech": false,
+            "assignments": [],
+            "tool_call_sound": null,
+            "tool_call_sound_behavior": "auto",
+            "dynamic_variables": {
+              "dynamic_variable_placeholders": {}
+            },
+            "execution_mode": "immediate",
+            "api_schema": {
+              "request_headers": {
+                "X-Onboard-Secret": "cND_QgeAz2wgRhaTu3fVAgdcXXYv0GSZvzHDOO-Jcp8"
+              },
+              "url": "https://jamify.jamiearmoordon.co.uk/api/v1/deezer/track-search",
+              "method": "POST",
+              "path_params_schema": {},
+              "query_params_schema": null,
+              "request_body_schema": {
+                "type": "object",
+                "required": [
+                  "query"
+                ],
+                "description": "",
+                "properties": {
+                  "query": {
+                    "type": "string",
+                    "description": "Search query for tracks",
+                    "enum": null,
+                    "is_system_provided": false,
+                    "dynamic_variable": "",
+                    "constant_value": ""
+                  },
+                  "limit": {
+                    "type": "integer",
+                    "description": "Maximum number of results (default 5)",
+                    "enum": null,
+                    "is_system_provided": false,
+                    "dynamic_variable": "",
+                    "constant_value": ""
+                  }
+                }
+              },
+              "content_type": "application/json",
+              "auth_connection": null
+            }
+          },
+          {
+            "type": "webhook",
+            "name": "get_mood_vibes",
+            "description": "Search for tracks matching a mood or vibe. Use when user describes how they want to FEEL (e.g., 'chill', 'high energy', 'sad', 'focus').",
+            "response_timeout_secs": 30,
+            "disable_interruptions": false,
+            "force_pre_tool_speech": false,
+            "assignments": [],
+            "tool_call_sound": null,
+            "tool_call_sound_behavior": "auto",
+            "dynamic_variables": {
+              "dynamic_variable_placeholders": {}
+            },
+            "execution_mode": "immediate",
+            "api_schema": {
+              "request_headers": {
+                "X-Onboard-Secret": "cND_QgeAz2wgRhaTu3fVAgdcXXYv0GSZvzHDOO-Jcp8"
+              },
+              "url": "https://jamify.jamiearmoordon.co.uk/api/v1/deezer/mood-search",
+              "method": "POST",
+              "path_params_schema": {},
+              "query_params_schema": null,
+              "request_body_schema": {
+                "type": "object",
+                "required": [
+                  "mood"
+                ],
+                "description": "",
+                "properties": {
+                  "mood": {
+                    "type": "string",
+                    "description": "The vibe description: chill, energetic, melancholic, happy, romantic, angry, focused",
+                    "enum": null,
+                    "is_system_provided": false,
+                    "dynamic_variable": "",
+                    "constant_value": ""
+                  },
+                  "genres": {
+                    "type": "array",
+                    "description": "Optional genre hints",
+                    "items": {
+                      "type": "string",
+                      "description": "A genre name",
+                      "enum": null,
+                      "is_system_provided": false,
+                      "dynamic_variable": "",
+                      "constant_value": ""
+                    }
+                  }
+                }
+              },
+              "content_type": "application/json",
+              "auth_connection": null
+            }
+          },
+          {
+            "type": "webhook",
+            "name": "get_era_hits",
+            "description": "Get popular tracks from a specific era or decade. Use when user mentions time periods like '90s', '80s', 'old school', 'new stuff'.",
+            "response_timeout_secs": 30,
+            "disable_interruptions": false,
+            "force_pre_tool_speech": false,
+            "assignments": [],
+            "tool_call_sound": null,
+            "tool_call_sound_behavior": "auto",
+            "dynamic_variables": {
+              "dynamic_variable_placeholders": {}
+            },
+            "execution_mode": "immediate",
+            "api_schema": {
+              "request_headers": {
+                "X-Onboard-Secret": "cND_QgeAz2wgRhaTu3fVAgdcXXYv0GSZvzHDOO-Jcp8"
+              },
+              "url": "https://jamify.jamiearmoordon.co.uk/api/v1/deezer/era-search",
+              "method": "POST",
+              "path_params_schema": {},
+              "query_params_schema": null,
+              "request_body_schema": {
+                "type": "object",
+                "required": [
+                  "era"
+                ],
+                "description": "",
+                "properties": {
+                  "era": {
+                    "type": "string",
+                    "description": "Decade/Era: 70s, 80s, 90s, 2000s, 2010s, recent, classic",
+                    "enum": null,
+                    "is_system_provided": false,
+                    "dynamic_variable": "",
+                    "constant_value": ""
+                  },
+                  "genre": {
+                    "type": "string",
+                    "description": "Optional genre filter",
+                    "enum": null,
+                    "is_system_provided": false,
+                    "dynamic_variable": "",
+                    "constant_value": ""
+                  }
+                }
+              },
+              "content_type": "application/json",
+              "auth_connection": null
+            }
+          },
+          {
+            "type": "webhook",
+            "name": "explore_genre",
+            "description": "Deep dive into a genre. Use to show examples from a genre the user mentions.",
+            "response_timeout_secs": 30,
+            "disable_interruptions": false,
+            "force_pre_tool_speech": false,
+            "assignments": [],
+            "tool_call_sound": null,
+            "tool_call_sound_behavior": "auto",
+            "dynamic_variables": {
+              "dynamic_variable_placeholders": {}
+            },
+            "execution_mode": "immediate",
+            "api_schema": {
+              "request_headers": {
+                "X-Onboard-Secret": "cND_QgeAz2wgRhaTu3fVAgdcXXYv0GSZvzHDOO-Jcp8"
+              },
+              "url": "https://jamify.jamiearmoordon.co.uk/api/v1/deezer/genre-explore",
+              "method": "POST",
+              "path_params_schema": {},
+              "query_params_schema": null,
+              "request_body_schema": {
+                "type": "object",
+                "required": [
+                  "genre"
+                ],
+                "description": "",
+                "properties": {
+                  "genre": {
+                    "type": "string",
+                    "description": "Genre to explore: pop, rock, hip-hop, electronic, jazz, etc.",
+                    "enum": null,
+                    "is_system_provided": false,
+                    "dynamic_variable": "",
+                    "constant_value": ""
+                  },
+                  "subgenre": {
+                    "type": "string",
+                    "description": "Optional subgenre",
+                    "enum": null,
+                    "is_system_provided": false,
+                    "dynamic_variable": "",
+                    "constant_value": ""
+                  }
+                }
+              },
+              "content_type": "application/json",
+              "auth_connection": null
+            }
+          },
+          {
+            "type": "webhook",
+            "name": "quick_vibe_check",
+            "description": "Get contrasting track pairs to quickly narrow down preferences. Use early in conversation.",
+            "response_timeout_secs": 30,
+            "disable_interruptions": false,
+            "force_pre_tool_speech": false,
+            "assignments": [],
+            "tool_call_sound": null,
+            "tool_call_sound_behavior": "auto",
+            "dynamic_variables": {
+              "dynamic_variable_placeholders": {}
+            },
+            "execution_mode": "immediate",
+            "api_schema": {
+              "request_headers": {
+                "X-Onboard-Secret": "cND_QgeAz2wgRhaTu3fVAgdcXXYv0GSZvzHDOO-Jcp8"
+              },
+              "url": "https://jamify.jamiearmoordon.co.uk/api/v1/deezer/vibe-check",
+              "method": "POST",
+              "path_params_schema": {},
+              "query_params_schema": null,
+              "request_body_schema": {
+                "type": "object",
+                "required": [
+                  "dimension"
+                ],
+                "description": "",
+                "properties": {
+                  "dimension": {
+                    "type": "string",
+                    "description": "What to test: energy, era, mood",
+                    "enum": null,
+                    "is_system_provided": false,
+                    "dynamic_variable": "",
+                    "constant_value": ""
+                  }
+                }
+              },
+              "content_type": "application/json",
+              "auth_connection": null
+            }
+          },
+          {
+            "type": "client",
+            "name": "play_song_preview",
+            "description": "Play a song preview on the user's device. ALWAYS play a preview when you find a track the user might like.",
+            "response_timeout_secs": 20,
+            "disable_interruptions": false,
+            "force_pre_tool_speech": false,
+            "assignments": [],
+            "tool_call_sound": null,
+            "tool_call_sound_behavior": "auto",
+            "parameters": {
+              "type": "object",
+              "required": [
+                "artist_name",
+                "track_title"
+              ],
+              "description": "",
+              "properties": {
+                "artist_name": {
+                  "type": "string",
+                  "description": "The artist name",
+                  "enum": null,
+                  "is_system_provided": false,
+                  "dynamic_variable": "",
+                  "constant_value": ""
+                },
+                "track_title": {
+                  "type": "string",
+                  "description": "The title of the track to play",
+                  "enum": null,
+                  "is_system_provided": false,
+                  "dynamic_variable": "",
+                  "constant_value": ""
+                }
+              }
+            },
+            "expects_response": false,
+            "dynamic_variables": {
+              "dynamic_variable_placeholders": {}
+            },
+            "execution_mode": "immediate"
+          }
+        ]
+      }
+    }
+  },
+  "metadata": {
+    "created_at_unix_secs": 1766779616,
+    "updated_at_unix_secs": 1767024268
+  },
+  "platform_settings": {
+    "evaluation": {
+      "criteria": []
+    },
+    "widget": {
+      "variant": "full",
+      "placement": "bottom-right",
+      "expandable": "never",
+      "avatar": {
+        "type": "orb",
+        "color_1": "#2792dc",
+        "color_2": "#9ce6e6"
+      },
+      "feedback_mode": "during",
+      "end_feedback": {
+        "type": "rating"
+      },
+      "bg_color": "#ffffff",
+      "text_color": "#000000",
+      "btn_color": "#000000",
+      "btn_text_color": "#ffffff",
+      "border_color": "#e1e1e1",
+      "focus_color": "#000000",
+      "border_radius": null,
+      "btn_radius": null,
+      "action_text": null,
+      "start_call_text": null,
+      "end_call_text": null,
+      "expand_text": null,
+      "listening_text": null,
+      "speaking_text": null,
+      "shareable_page_text": null,
+      "shareable_page_show_terms": true,
+      "terms_text": "#### Terms and conditions\n\nBy clicking \"Agree,\" and each time I interact with this AI agent, I consent to the recording, storage, and sharing of my communications with third-party service providers, and as described in the Privacy Policy.\nIf you do not wish to have your conversations recorded, please refrain from using this service.",
+      "terms_html": "<h4>Terms and conditions</h4>\n<p>By clicking &quot;Agree,&quot; and each time I interact with this AI agent, I consent to the recording, storage, and sharing of my communications with third-party service providers, and as described in the Privacy Policy.\nIf you do not wish to have your conversations recorded, please refrain from using this service.</p>\n",
+      "terms_key": null,
+      "show_avatar_when_collapsed": false,
+      "disable_banner": false,
+      "override_link": null,
+      "markdown_link_allowed_hosts": [],
+      "markdown_link_include_www": true,
+      "markdown_link_allow_http": true,
+      "mic_muting_enabled": false,
+      "transcript_enabled": false,
+      "text_input_enabled": true,
+      "conversation_mode_toggle_enabled": false,
+      "default_expanded": false,
+      "always_expanded": false,
+      "text_contents": {
+        "main_label": null,
+        "start_call": null,
+        "start_chat": null,
+        "new_call": null,
+        "end_call": null,
+        "mute_microphone": null,
+        "change_language": null,
+        "collapse": null,
+        "expand": null,
+        "copied": null,
+        "accept_terms": null,
+        "dismiss_terms": null,
+        "listening_status": null,
+        "speaking_status": null,
+        "connecting_status": null,
+        "chatting_status": null,
+        "input_label": null,
+        "input_placeholder": null,
+        "input_placeholder_text_only": null,
+        "input_placeholder_new_conversation": null,
+        "user_ended_conversation": null,
+        "agent_ended_conversation": null,
+        "conversation_id": null,
+        "error_occurred": null,
+        "copy_id": null,
+        "initiate_feedback": null,
+        "request_follow_up_feedback": null,
+        "thanks_for_feedback": null,
+        "thanks_for_feedback_details": null,
+        "follow_up_feedback_placeholder": null,
+        "submit": null,
+        "go_back": null
+      },
+      "styles": {
+        "base": null,
+        "base_hover": null,
+        "base_active": null,
+        "base_border": null,
+        "base_subtle": null,
+        "base_primary": null,
+        "base_error": null,
+        "accent": null,
+        "accent_hover": null,
+        "accent_active": null,
+        "accent_border": null,
+        "accent_subtle": null,
+        "accent_primary": null,
+        "overlay_padding": null,
+        "button_radius": null,
+        "input_radius": null,
+        "bubble_radius": null,
+        "sheet_radius": null,
+        "compact_sheet_radius": null,
+        "dropdown_sheet_radius": null
+      },
+      "language_selector": false,
+      "supports_text_only": true,
+      "custom_avatar_path": null,
+      "language_presets": {}
+    },
+    "data_collection": {},
+    "overrides": {
+      "conversation_config_override": {
+        "turn": {
+          "soft_timeout_config": {
+            "message": false
+          }
+        },
+        "tts": {
+          "voice_id": false,
+          "stability": false,
+          "speed": false,
+          "similarity_boost": false
+        },
+        "conversation": {
+          "text_only": true
+        },
+        "agent": {
+          "first_message": false,
+          "language": false,
+          "prompt": {
+            "prompt": false,
+            "llm": false,
+            "native_mcp_server_ids": false
+          }
+        }
+      },
+      "custom_llm_extra_body": false,
+      "enable_conversation_initiation_client_data_from_webhook": false
+    },
+    "workspace_overrides": {
+      "conversation_initiation_client_data_webhook": null,
+      "webhooks": {
+        "post_call_webhook_id": null,
+        "events": [
+          "transcript"
+        ],
+        "send_audio": false
+      }
+    },
+    "testing": {
+      "attached_tests": [],
+      "referenced_tests_ids": []
+    },
+    "archived": false,
+    "guardrails": {
+      "version": "1",
+      "moderation": {
+        "config": {
+          "sexual": {
+            "is_enabled": false,
+            "threshold": 0.3
+          },
+          "violence": {
+            "is_enabled": false,
+            "threshold": 0.3
+          },
+          "violence_graphic": {
+            "is_enabled": false,
+            "threshold": 0.3
+          },
+          "harassment": {
+            "is_enabled": false,
+            "threshold": 0.3
+          },
+          "harassment_threatening": {
+            "is_enabled": false,
+            "threshold": 0.3
+          },
+          "hate": {
+            "is_enabled": false,
+            "threshold": 0.3
+          },
+          "hate_threatening": {
+            "is_enabled": false,
+            "threshold": 0.3
+          },
+          "self_harm_instructions": {
+            "is_enabled": false,
+            "threshold": 0.3
+          },
+          "self_harm": {
+            "is_enabled": false,
+            "threshold": 0.3
+          },
+          "self_harm_intent": {
+            "is_enabled": false,
+            "threshold": 0.3
+          },
+          "sexual_minors": {
+            "is_enabled": false,
+            "threshold": 0.3
+          }
+        }
+      }
+    },
+    "auth": {
+      "enable_auth": false,
+      "allowlist": [],
+      "shareable_token": null
+    },
+    "call_limits": {
+      "agent_concurrency_limit": -1,
+      "daily_limit": 100000,
+      "bursting_enabled": true
+    },
+    "ban": null,
+    "privacy": {
+      "record_voice": true,
+      "retention_days": -1,
+      "delete_transcript_and_pii": false,
+      "delete_audio": false,
+      "apply_to_existing_conversations": false,
+      "zero_retention_mode": false
+    },
+    "safety": {
+      "is_blocked_ivc": false,
+      "is_blocked_non_ivc": false,
+      "ignore_safety_evaluation": false
+    }
+  },
+  "phone_numbers": [],
+  "workflow": {
+    "edges": {},
+    "nodes": {
+      "start_node": {
+        "type": "start",
+        "position": {
+          "x": 0.0,
+          "y": 0.0
+        },
+        "edge_order": []
+      }
+    },
+    "prevent_subagent_loops": false
+  },
+  "access_info": {
+    "is_creator": true,
+    "creator_name": "Jamie Armoordon",
+    "creator_email": "jamiearmoordon7@gmail.com",
+    "role": "admin"
+  },
+  "tags": [],
+  "version_id": null,
+  "branch_id": null,
+  "main_branch_id": null
+}

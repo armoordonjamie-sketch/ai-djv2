@@ -27,7 +27,7 @@ export function QueueList({ tracks, className }: QueueListProps) {
       {/* Header */}
       <button
         onClick={() => setIsExpanded(!isExpanded)}
-        className="w-full flex items-center justify-between px-4 py-3 hover:bg-surface-2 transition-colors"
+        className="w-full flex items-center justify-between px-3 py-2.5 hover:bg-surface-2 transition-colors"
       >
         <div className="flex items-center gap-2">
           <span className="text-sm font-medium">Queue</span>
@@ -55,7 +55,7 @@ export function QueueList({ tracks, className }: QueueListProps) {
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ delay: index * 0.05 }}
                 className={cn(
-                  "flex items-center gap-3 px-4 py-3",
+                  "flex items-center gap-3 px-3 py-2.5",
                   index < Math.min(tracks.length, 5) - 1 && "border-b border-border/50",
                 )}
               >
@@ -63,14 +63,22 @@ export function QueueList({ tracks, className }: QueueListProps) {
                 <span className="text-xs text-muted-foreground w-4 text-center tabular-nums">{index + 1}</span>
 
                 {/* Artwork */}
-                <div className="w-10 h-10 rounded-lg flex-shrink-0 overflow-hidden bg-surface-2">
-                  {track.artworkUrl ? (
-                    <img src={track.artworkUrl || "/placeholder.svg"} alt="" className="w-full h-full object-cover" />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center">
-                      <Music className="w-4 h-4 text-muted-foreground" />
-                    </div>
+                <div className="w-9 h-9 rounded-lg flex-shrink-0 overflow-hidden bg-surface-2 relative">
+                  {track.artworkUrl && (
+                    <img 
+                      src={track.artworkUrl} 
+                      alt="" 
+                      className="w-full h-full object-cover relative z-10"
+                      onError={(e) => {
+                        // Hide broken image, fallback will show through
+                        (e.target as HTMLImageElement).style.display = 'none'
+                      }}
+                    />
                   )}
+                  {/* Fallback underneath image */}
+                  <div className="w-full h-full flex items-center justify-center absolute inset-0 z-0">
+                    <Music className="w-4 h-4 text-muted-foreground" />
+                  </div>
                 </div>
 
                 {/* Track info */}

@@ -50,7 +50,7 @@ async def start_stream(
     """
     from backend_v2.models.existing import Session
     
-    # Gate: Require onboarding before streaming
+    # Gate: Require onboarding + at least one mood with intro before streaming
     if current_user.onboarded_at is None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -60,8 +60,134 @@ async def start_stream(
                 "next": "/api/v1/onboard/start",
             },
         )
+
+    from backend_v2.models.mood import Mood
+    mood_result = await db.execute(
+        select(Mood).where(Mood.user_id == current_user.id)
+    )
+    moods = mood_result.scalars().all()
+    intro_ready = any(mood.intro_segment_path for mood in moods)
+    if not moods or not intro_ready:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "onboarding_required",
+                "message": "Your first mood is still being prepared. Please wait a moment.",
+                "next": "/api/v1/onboard/generation-status",
+            },
+        )
     
     context_id = None
+    position_sec = None  # For resume functionality
+    
+    # Check if resuming an existing session
+    if data.resume:
+        # Find the user's active session
+        result = await db.execute(
+            select(Session)
+            .where(
+                Session.user_id == current_user.id,
+                Session.is_active == 1,
+            )
+            .order_by(Session.started_at.desc())
+            .limit(1)
+        )
+        existing_session = result.scalar_one_or_none()
+        
+        if existing_session:
+            logger.info(
+                f"Resuming session {existing_session.session_id} for user {current_user.id} "
+                f"at position {existing_session.playback_position_sec}s"
+            )
+            
+            # Resolve context_id to context_name if needed
+            context_name = None
+            if existing_session.context_id:
+                context_result = await db.execute(
+                    select(UserContext).where(UserContext.id == existing_session.context_id)
+                )
+                context = context_result.scalar_one_or_none()
+                if context:
+                    context_name = context.name
+            
+            # Resolve mood_id - use session's stored mood or fall back to default
+            resume_mood_id = existing_session.mood_id
+            if not resume_mood_id:
+                from backend_v2.models.mood import Mood
+                default_mood_result = await db.execute(
+                    select(Mood).where(
+                        Mood.user_id == current_user.id,
+                        Mood.is_default == True,
+                    ).limit(1)
+                )
+                default_mood = default_mood_result.scalar_one_or_none()
+                if default_mood:
+                    resume_mood_id = default_mood.id
+                    # Update the session with the mood
+                    existing_session.mood_id = resume_mood_id
+                    await db.commit()
+            
+            # Get or create pipeline with existing session ID and resume info
+            pipeline = await get_user_pipeline(
+                user_id=current_user.id,
+                session_id=existing_session.session_id,
+                create_if_missing=True,
+                mood_id=resume_mood_id,
+                context_name=context_name,
+                resume_song_uuid=existing_session.current_song_uuid,
+                resume_position_sec=existing_session.playback_position_sec,
+            )
+            
+            # Emit stream_status event
+            emitter = get_event_emitter()
+            await emitter.emit_stream_status(
+                user_id=current_user.id,
+                status="resumed",
+                session_id=existing_session.session_id
+            )
+            
+            # Emit structured StatusEvent
+            from backend_v2.schemas.status_events import StatusCategory, StatusStep
+            await emitter.emit_status(
+                user_id=current_user.id,
+                category=StatusCategory.PLAYBACK,
+                step=StatusStep.STARTING,
+                user_message="Resuming your stream...",
+                session_id=existing_session.session_id,
+            )
+            
+            # NOTE: Return position_sec for UI display. Backend handles the actual seek via FFmpeg,
+            # but frontend needs to know the position for progress bar display.
+            
+            return StreamStartResponse(
+                session_id=existing_session.session_id,
+                stream_url="/api/v1/stream",
+                ws_url="/api/v1/ws",
+                mood_id=resume_mood_id,
+                now_playing=pipeline.now_playing,
+                position_sec=existing_session.playback_position_sec,  # For UI display
+            )
+    
+    # Not resuming - mark any existing active sessions as inactive
+    await db.execute(
+        select(Session)
+        .where(
+            Session.user_id == current_user.id,
+            Session.is_active == 1,
+        )
+    )
+    existing_sessions = (await db.execute(
+        select(Session).where(
+            Session.user_id == current_user.id,
+            Session.is_active == 1,
+        )
+    )).scalars().all()
+    
+    for sess in existing_sessions:
+        sess.is_active = 0
+        sess.ended_at = utc_isoformat(utc_now())
+    
+    await db.commit()
     
     # Resolve context name to ID if provided
     if data.context_name:
@@ -80,12 +206,26 @@ async def start_stream(
         import uuid
         session_id = str(uuid.uuid4())
         
+        # Get default mood if not provided
+        mood_id = data.mood_id
+        if not mood_id:
+            from backend_v2.models.mood import Mood
+            default_mood_result = await db.execute(
+                select(Mood).where(
+                    Mood.user_id == current_user.id,
+                    Mood.is_default == True,
+                ).limit(1)
+            )
+            default_mood = default_mood_result.scalar_one_or_none()
+            if default_mood:
+                mood_id = default_mood.id
+        
         # Create Session row in database (required for foreign key constraints)
         db_session = Session(
             session_id=session_id,
             user_id=current_user.id,
             context_id=context_id,
-            mood_id=data.mood_id,
+            mood_id=mood_id,
             started_at=utc_isoformat(utc_now()),
             mode="autonomous",
         )
@@ -94,10 +234,14 @@ async def start_stream(
         logger.info(f"Created session {session_id} for user {current_user.id}")
         
         # Get or create per-user pipeline
+        # Pass resume_position_sec if provided (for per-mood resume feature)
         pipeline = await get_user_pipeline(
             user_id=current_user.id,
             session_id=session_id,
-            create_if_missing=True
+            create_if_missing=True,
+            mood_id=data.mood_id,
+            context_name=data.context_name,
+            resume_position_sec=data.position_sec if data.resume and data.position_sec else None,
         )
         
         # Emit stream_status event via WebSocket
@@ -114,7 +258,7 @@ async def start_stream(
             user_id=current_user.id,
             category=StatusCategory.PLAYBACK,
             step=StatusStep.STARTING,
-            user_message="Starting your stream...",
+            user_message="Resuming your stream..." if data.position_sec else "Starting your stream...",
             session_id=pipeline.session_id,
         )
         
@@ -122,7 +266,9 @@ async def start_stream(
             session_id=pipeline.session_id,
             stream_url="/api/v1/stream",
             ws_url="/api/v1/ws",
+            mood_id=mood_id,
             now_playing=pipeline.now_playing,
+            position_sec=None,  # Backend handles seek via FFmpeg, frontend should not seek
         )
     
     except ValueError as e:
@@ -163,8 +309,11 @@ async def get_stream_status(
 @router.post("/stop", response_model=MessageResponse)
 async def stop_stream(
     current_user: User = Depends(get_current_user_http),
+    db: AsyncSession = Depends(get_async_session),
 ):
     """Stop the current user's streaming session."""
+    from backend_v2.models.existing import Session
+    
     stopped = await stop_user_pipeline(current_user.id)
     
     if not stopped:
@@ -172,6 +321,22 @@ async def stop_stream(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="No active stream to stop.",
         )
+    
+    # Mark all active sessions as inactive
+    result = await db.execute(
+        select(Session).where(
+            Session.user_id == current_user.id,
+            Session.is_active == 1,
+        )
+    )
+    active_sessions = result.scalars().all()
+    
+    for session in active_sessions:
+        session.is_active = 0
+        session.ended_at = utc_isoformat(utc_now())
+        logger.info(f"Marked session {session.session_id} as inactive for user {current_user.id}")
+    
+    await db.commit()
     
     # Emit stream_status event
     emitter = get_event_emitter()
@@ -188,6 +353,9 @@ async def stop_stream(
         step=StatusStep.STOPPED,
         user_message="Stream stopped",
     )
+    
+    # Note: Mood training is triggered in pipeline.stop() to handle both explicit stops
+    # and WebSocket disconnect grace period stops in one place
     
     return MessageResponse(message="Stream stopped")
 
@@ -237,6 +405,40 @@ async def skip_track(
         session_id=pipeline.session_id,
     )
     
+    # Trigger mood training from skip (LLM-based, runs in background)
+    # Get mood_id and current track info from session database
+    mood_id = None
+    track_artist = None
+    track_title = None
+    
+    if pipeline.session_id:
+        from backend_v2.db.session import get_db_session
+        from backend_v2.models.existing import Session
+        from sqlalchemy import select
+        
+        async with get_db_session() as db:
+            session_result = await db.execute(
+                select(Session).where(Session.session_id == pipeline.session_id)
+            )
+            session_obj = session_result.scalar_one_or_none()
+            if session_obj:
+                mood_id = session_obj.mood_id
+                track_artist = session_obj.current_song_artist
+                track_title = session_obj.current_song_title
+    
+    if mood_id and track_artist and track_title:
+        import asyncio
+        from backend_v2.services.mood_enrichment import train_from_skip
+        
+        asyncio.create_task(
+            train_from_skip(
+                mood_id=mood_id,
+                track_artist=track_artist,
+                track_title=track_title,
+            )
+        )
+        logger.info(f"🎓 Triggered train_from_skip: {track_artist} - {track_title}")
+    
     return MessageResponse(message="Track skipped")
 
 
@@ -268,13 +470,23 @@ async def stream_audio(
             detail="No active stream. Call POST /stream/start first.",
         )
     
+    # iOS Safari requires specific headers for streaming audio
+    # - X-Content-Type-Options: nosniff prevents Safari from buffering incorrectly
+    # - Pragma: no-cache helps with iOS caching issues
+    # - Access-Control-Allow-Origin: needed for CORS on iOS PWA
     return StreamingResponse(
         pipeline.stream_audio(),
         media_type="audio/mpeg",
         headers={
-            "Cache-Control": "no-cache",
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0",
             "Connection": "keep-alive",
             "Accept-Ranges": "none",
+            "X-Content-Type-Options": "nosniff",
+            # ICY-like headers hint to iOS Safari this is a live stream
+            "icy-br": "128",
+            "icy-name": "AI DJ Stream",
         },
     )
 

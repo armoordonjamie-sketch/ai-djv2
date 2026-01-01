@@ -121,3 +121,24 @@
 
 All commits pushed to GitHub (master + main branches).
 
+---
+
+## Recent Performance Improvements (Dec 29, 2024)
+
+### Stream Playback Delay Fix
+
+**Issue**: Stream not playing immediately - intro files took ~0.5s to start playing even though they were pre-generated and ready.
+
+**Root Cause**: The segment feeder in "defer" mode was polling the queue every 0.5 seconds, introducing an unnecessary delay before detecting available segments.
+
+**Fix**: Reduced polling interval from 0.5s to 0.05s in `backend_v2/streaming/pipeline.py`.
+
+**Result**: 
+- Delay reduced from ~500ms to ~50ms (90% improvement)
+- Nearly instantaneous playback when using pre-generated mood intros
+- More responsive streaming startup overall
+
+**Files Changed**:
+- `backend_v2/streaming/pipeline.py` - Reduced sleep interval in defer mode
+- `docs/stream_startup_fix.md` - Documented the improvement
+
